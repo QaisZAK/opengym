@@ -339,6 +339,11 @@ function MobileReminderCard({ S, update, toast }) {
 }
 
 function PushCard({ S, update, toast }) {
+  const nav = useNavigate()
+  // Notification center settings (read server-side by the reminder loops, see api/notify.js).
+  const N = S.notify || {}
+  const setNotify = patch => update(s => { s.notify = { ...(s.notify || {}), ...patch, tz: localTZ() } })
+  const snoozed = N.snoozeUntil > Date.now()
   const [on, setOn] = useState(false)
   const [busy, setBusy] = useState(false)
   const supported = pushSupported()
@@ -389,7 +394,38 @@ function PushCard({ S, update, toast }) {
             onChange={e => update(s => { s.reminder = { ...(s.reminder || DEF.reminder), time: e.target.value, tz: localTZ() } })} />
         </Row>
       )}
+      {on && <>
+        <Row icon="scale" iconTint="var(--teal)" title={t('Weigh-in reminder')} subtitle={t('Only if you haven’t logged your weight that day.')}>
+          <Switch checked={!!N.weight?.on} onChange={v => setNotify({ weight: { time: '08:00', ...N.weight, on: v } })} />
+        </Row>
+        {N.weight?.on && <Row icon="clock" iconTint="var(--purple)" title={t('Weigh-in time')}>
+          <input type="time" className="timef" value={N.weight.time || '08:00'} onChange={e => setNotify({ weight: { ...N.weight, time: e.target.value } })} />
+        </Row>}
+        <Row icon="flame" iconTint="var(--orange)" title={t('Streak at risk')} subtitle={t('Sunday 18:00, if nothing is logged that week.')}>
+          <Switch checked={!!N.streak?.on} onChange={v => setNotify({ streak: { on: v } })} />
+        </Row>
+        <Row icon="water" iconTint="var(--teal)" title={t('Water reminders')} subtitle={S.nutrition?.water?.reminder?.on ? t('On — change in Water settings') : t('Off — turn on in Water settings')} accessory="chevron" onClick={() => nav('/water')} />
+      </>}
     </Section>
+    {on && <Section title={t('Quiet time')} footer={t('Reminders stay silent during quiet hours or a snooze. Rest-timer alerts still come through.')}>
+      <Row icon="moon" iconTint="var(--indigo)" title={t('Quiet hours')}>
+        <Switch checked={!!N.quiet?.on} onChange={v => setNotify({ quiet: { from: '22:00', to: '07:00', ...N.quiet, on: v } })} />
+      </Row>
+      {N.quiet?.on && <Row icon="clock" iconTint="var(--purple)" title={t('From / to')}>
+        <span className="row" style={{ gap: 6 }}>
+          <input type="time" className="timef" value={N.quiet.from} onChange={e => setNotify({ quiet: { ...N.quiet, from: e.target.value } })} aria-label={t('From')} />
+          <input type="time" className="timef" value={N.quiet.to} onChange={e => setNotify({ quiet: { ...N.quiet, to: e.target.value } })} aria-label={t('To')} />
+        </span>
+      </Row>}
+      {snoozed ? <Row icon="bellSlash" iconTint="var(--grey)" title={t('Snoozed until {0}', new Date(N.snoozeUntil).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }))}>
+        <Button size="sm" onClick={() => setNotify({ snoozeUntil: null })}>{t('Resume')}</Button>
+      </Row> : <Row icon="bellSlash" iconTint="var(--grey)" title={t('Snooze reminders')}>
+        <span className="row" style={{ gap: 6 }}>
+          <Button size="sm" onClick={() => setNotify({ snoozeUntil: Date.now() + 3600000 })}>{t('1 h')}</Button>
+          <Button size="sm" onClick={() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(7, 0, 0, 0); setNotify({ snoozeUntil: d.getTime() }) }}>{t('Till tomorrow')}</Button>
+        </span>
+      </Row>}
+    </Section>}
     {on && <div style={{ marginTop: -12, marginBottom: 22 }}><Button size="sm" icon="bell" onClick={test}>{t('Send test notification')}</Button></div>}
   </>
 }

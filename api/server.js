@@ -14,6 +14,7 @@ import * as coachJobs from './coach/jobs.js';
 import { coachRoutes } from './coach/routes.js';
 import { startCadence } from './coach/cadence.js';
 import { foodSearch, foodBarcode, OFF_ATTR } from './food.js';
+import { muted, streakAtRisk } from './notify.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -143,6 +144,7 @@ setInterval(() => {
     const now = userNow(S.reminder.tz || 'UTC');
     if (!now || S.reminder.time !== now.hhmm) continue;
     if (user.lastReminder === now.date) continue;
+    if (muted(S, now.hhmm)) continue;          // snoozed or in quiet hours
     if ((S.workouts || []).some(w => w.d === now.date)) continue;
     const rid = effectiveRoutineId(S, now.date);
     if (!rid) continue; // rest day — nothing planned
@@ -171,6 +173,7 @@ setInterval(() => {
     const now = userNow(wr.tz || 'UTC');
     if (!now) continue;                                        // unknown tz — skip rather than guess
     if ((wr.from && now.hhmm < wr.from) || (wr.to && now.hhmm > wr.to)) continue;  // outside the window
+    if (muted(S, now.hhmm)) continue;                          // snoozed or in quiet hours
     const water = S.nutrition.water;
     const goal = water.goalMl || 0;
     const day = water.log && water.log[now.date];              // entry array now, or an old plain ml number
@@ -183,6 +186,29 @@ setInterval(() => {
     sendPush(user.id, { title: '💧 Time for water', body: 'Stay hydrated — log a glass in openGym.', tag: 'water' });
   }
 }, 60000).unref();
+
+// Weigh-in reminder (S.notify.weight) at the user's time if nothing is logged today, and a
+// Sunday-evening "streak at risk" nudge (S.notify.streak). Each fires at most once a day.
+const STREAK_AT = '18:00';
+setInterval(() => {
+  for (const user of db.users) {
+    if (!db.subs.some(s => s.userId === user.id)) continue;
+    const S = readState(user.id);
+    const n = S?.notify;
+    if (!n || !(n.weight?.on || n.streak?.on)) continue;
+    const now = userNow(n.tz || S.reminder?.tz || 'UTC');
+    if (!now || muted(S, now.hhmm)) continue;
+    if (n.weight?.on && n.weight.time === now.hhmm && user.lastWeightPush !== now.date
+      && !(S.bodyweight || []).some(b => b.d === now.date)) {
+      user.lastWeightPush = now.date; saveDb();
+      sendPush(user.id, { title: '⚖️ Weigh-in', body: 'Step on the scale and log it — it keeps your trend honest.', tag: 'weight' });
+    }
+    if (n.streak?.on && now.hhmm === STREAK_AT && user.lastStreakPush !== now.date && streakAtRisk(S.workouts, now.date)) {
+      user.lastStreakPush = now.date; saveDb();
+      sendPush(user.id, { title: '🔥 Streak at risk', body: 'No workout logged this week yet — today keeps the streak alive.', tag: 'streak' });
+    }
+  }
+}, 10000).unref();
 
 /* ---------- sessions (signed cookie) ---------- */
 function sign(payload) {

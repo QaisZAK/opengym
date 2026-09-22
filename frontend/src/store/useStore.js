@@ -25,6 +25,9 @@ export const DEF = {
   google: null,
   // Body measurements: [{ d, t, waist, chest, … }] in cm (lib/measure.js), one entry per day.
   measurements: [],
+  // Notification center: { quiet: {on, from, to}, snoozeUntil, weight: {on, time}, streak: {on}, tz }.
+  // Read by the server's reminder loops (api/notify.js). null = defaults (nothing extra on).
+  notify: null,
   // Standalone progress photos [{ d, id }] — Drive file ids only (photos attached to a weigh-in
   // live on that bodyweight entry instead).
   photos: [],
