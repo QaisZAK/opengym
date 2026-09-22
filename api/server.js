@@ -307,7 +307,7 @@ const routes = {
   'GET /api/me': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } });
+    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user), passkeys: db.creds.filter(x => x.userId === user.id).length } });
   },
 
   'POST /api/register/options': async (req, res) => {
@@ -363,6 +363,50 @@ const routes = {
     });
     saveDb();
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
+  },
+
+  // Attach another passkey (a second phone, a security key) to the signed-in account — the only
+  // way back in if the one device holding the passkey is lost. Same user handle as the original
+  // registration, and existing credentials are excluded so an authenticator can't enrol twice.
+  'POST /api/register/add/options': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const mine = db.creds.filter(x => x.userId === user.id);
+    const options = await generateRegistrationOptions({
+      rpName: RP_NAME, rpID: RP_ID,
+      userID: Buffer.from(user.id), userName: user.name, userDisplayName: user.name,
+      attestationType: 'none',
+      authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+      excludeCredentials: mine.map(x => ({ id: x.id, transports: x.transports }))
+    });
+    const cid = putChallenge({ challenge: options.challenge, addFor: user.id });
+    json(res, 200, { cid, options });
+  },
+
+  'POST /api/register/add/verify': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const c = takeChallenge(body.cid);
+    if (!c || c.addFor !== user.id) return json(res, 400, { error: 'challenge expired — try again' });
+    let verification;
+    try {
+      verification = await verifyRegistrationResponse({
+        response: body.credential, expectedChallenge: c.challenge,
+        expectedOrigin: ORIGIN, expectedRPID: RP_ID, requireUserVerification: false
+      });
+    } catch (e) { return json(res, 400, { error: 'verification failed: ' + e.message }); }
+    if (!verification.verified) return json(res, 400, { error: 'not verified' });
+    const { credential } = verification.registrationInfo;
+    if (db.creds.find(x => x.id === credential.id)) return json(res, 409, { error: 'that passkey is already registered' });
+    db.creds.push({
+      id: credential.id, userId: user.id,
+      publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+      counter: credential.counter || 0,
+      transports: body.credential?.response?.transports || []
+    });
+    saveDb();
+    json(res, 200, { passkeys: db.creds.filter(x => x.userId === user.id).length });
   },
 
   'POST /api/login/options': async (req, res) => {
