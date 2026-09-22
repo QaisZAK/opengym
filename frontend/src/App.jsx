@@ -4,7 +4,7 @@ import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
 import { ACCENTS } from './lib/format.js'
-import { setLang, useLang } from './lib/i18n.js'
+import { setLang, useLang, t } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
 import { startFlow } from './sheets.jsx'
@@ -61,6 +61,15 @@ function Shell() {
   useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
   // every tab/route change starts at the top of the page
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
+  // Keyboard: Enter/Space activate the tappable rows that aren't native buttons (role="button").
+  useEffect(() => {
+    const onKey = e => {
+      const el = e.target
+      if ((e.key === 'Enter' || e.key === ' ') && el?.getAttribute?.('role') === 'button' && el.tagName !== 'BUTTON') { e.preventDefault(); el.click() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
   // bound to the workout, not to the route — checking Stats mid-session keeps the screen on
   useWakeLock(!!S.active && S.keepAwake !== false)
 
@@ -75,9 +84,11 @@ function Shell() {
 
   return (
     <>
+      {/* HashRouter owns the URL hash, so the skip link focuses the content instead of linking to it */}
+      <button className="skip" onClick={() => document.getElementById('app')?.focus()}>{t('Skip to content')}</button>
       {/* keyed on the route: a view that throws is contained, and switching tabs
           re-mounts the boundary, so the tab bar is always a way out */}
-      <div id="app" className="vfade" key={loc.pathname}>
+      <div id="app" className="vfade" key={loc.pathname} tabIndex={-1}>
         <ErrorBoundary>
           {!authed ? <Login /> : (
             <Routes>

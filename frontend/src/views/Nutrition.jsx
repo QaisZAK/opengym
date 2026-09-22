@@ -154,7 +154,7 @@ function MealSection({ meal, iso, entries }) {
 function FoodRow({ food, onClick, icon = 'plus' }) {
   const per = food.per === 'serving' ? t('serving') : '100g'
   return (
-    <div className="item" onClick={onClick}>
+    <div role="button" tabIndex={0} className="item" onClick={onClick}>
       <div className="grow">
         <div className="tt">{food.fav && <Icon name="starFill" style={{ color: 'var(--yellow)', marginRight: 4 }} />}{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 6 }}>{t('est.')}</span>}</div>
         <div className="ss">{fmtNum(food.kcal)} kcal · {per}{food.brand ? ' · ' + food.brand : ''}</div>
@@ -231,7 +231,7 @@ function Scanner({ onCode, close }) {
 
 function MealRow({ m, onClick }) {
   const tot = mealMacros(m.items)
-  return <div className="item" onClick={onClick}>
+  return <div role="button" tabIndex={0} className="item" onClick={onClick}>
     <span className="lrow-i"><Icon name="list" /></span>
     <div className="grow"><div className="tt">{m.name}</div><div className="ss">{fmtNum(tot.kcal)} kcal · {(m.items || []).length} {t('items')}</div></div>
     <Icon name="plus" className="chev" />
@@ -239,7 +239,7 @@ function MealRow({ m, onClick }) {
 }
 function RecipeRow({ r, onClick }) {
   const ps = recipePerServing(r)
-  return <div className="item" onClick={onClick}>
+  return <div role="button" tabIndex={0} className="item" onClick={onClick}>
     <span className="lrow-i"><Icon name="clipboard" /></span>
     <div className="grow"><div className="tt">{r.name}</div><div className="ss">{fmtNum(ps.kcal)} kcal/{t('serving')} · {r.servings || 1} {t('servings')}</div></div>
     <Icon name="plus" className="chev" />
@@ -614,7 +614,7 @@ function Suggest({ iso, close }) {
       ? <div className="muted small" style={{ marginBottom: 10 }}>{rem.kcal > 0 ? t('{0} kcal and {1} g protein left today.', fmtNum(rem.kcal), fmtNum(rem.protein)) : t("You're at your calorie target for today.")}</div>
       : <div className="small" style={{ color: 'var(--yellow)', marginBottom: 10 }}>{t('Set your targets to get suggestions that fit your day.')}</div>}
     <div className="list">
-      {list.map((c, i) => <div key={i} className="item" onClick={() => { logCandidate(c, iso, slot); close(); toast(t('Added {0} to {1}', c.name, mealLabel(slot))) }}>
+      {list.map((c, i) => <div role="button" tabIndex={0} key={i} className="item" onClick={() => { logCandidate(c, iso, slot); close(); toast(t('Added {0} to {1}', c.name, mealLabel(slot))) }}>
         <span className="lrow-i"><Icon name={c.kind === 'meal' ? 'list' : c.kind === 'recipe' ? 'clipboard' : 'flame'} /></span>
         <div className="grow"><div className="tt">{c.name}</div><div className="ss">{fmtNum(c.kcal)} kcal · P {fmtNum(c.protein)}{c.fits ? '' : ' · ' + t('over budget')}</div></div>
         <Icon name="plus" className="chev" />

@@ -36,9 +36,10 @@ export default function Heatmap({ S, onDay }) {
       const key = isoOf(day)
       const a = agg[key]
       const cls = 'hm-c l' + level(a) + (key === todayISO() ? ' today' : '') + (day > today ? ' future' : '')
-      cells.push(<div key={d} className={cls}
-        title={key + (a ? ` · ${t(a.n === 1 ? '{0} workout' : '{0} workouts', a.n)} · ${a.min} min · ${fmtVol(a.vol, S.unit)}` : '')}
-        onClick={a ? () => onDay(key) : undefined} />)
+      const title = key + (a ? ` · ${t(a.n === 1 ? '{0} workout' : '{0} workouts', a.n)} · ${a.min} min · ${fmtVol(a.vol, S.unit)}` : '')
+      // only trained days open something, so only they are buttons / tab stops
+      cells.push(<div key={d} className={cls} title={title}
+        {...(a ? { role: 'button', tabIndex: 0, 'aria-label': title, onClick: () => onDay(key) } : {})} />)
     }
     cols.push(<div key={wk} className="hm-col">{cells}</div>)
   }

@@ -44,19 +44,28 @@ function Sheet({ sheet }) {
     return () => el.removeEventListener('touchmove', onTouchMove)
   }, [])
 
+  // Move focus into the dialog when it opens and hand it back to whatever opened it on close,
+  // so keyboard and screen-reader users land in (and return from) the sheet.
+  const box = useRef(null)
+  useEffect(() => {
+    const prev = document.activeElement
+    ;(ref.current || box.current)?.focus({ preventScroll: true })
+    return () => prev?.focus?.({ preventScroll: true })
+  }, [])
+
   const close = () => closeSheet(sheet.id)
   if (sheet.kind === 'center') {
     return (
       <div>
         <div className="mback" onClick={() => { if (!sheet.locked) close() }} />
-        <div className="center">{sheet.render(close)}</div>
+        <div className="center" ref={box} role="dialog" aria-modal="true" tabIndex={-1}>{sheet.render(close)}</div>
       </div>
     )
   }
   return (
     <div>
       <div className="mback" onClick={() => { if (!sheet.locked) close() }} />
-      <div className="sheet" ref={ref} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className="sheet" ref={ref} role="dialog" aria-modal="true" tabIndex={-1} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <div className="grab" />
         {sheet.render(close)}
       </div>
@@ -78,6 +87,17 @@ export default function Modals() {
       window.scrollTo(0, y)
     }
   }, [sheets.length > 0])
+
+  // Escape closes the top sheet (a locked one — e.g. the finish summary — stays).
+  useEffect(() => {
+    const onKey = e => {
+      if (e.key !== 'Escape') return
+      const top = useUI.getState().sheets.at(-1)
+      if (top && !top.locked) useUI.getState().closeSheet(top.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   if (!sheets.length) return null
   return (

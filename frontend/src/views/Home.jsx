@@ -26,7 +26,7 @@ function CoachCard({ nav }) {
   if (!hasConsent(S) || (!job && !pending)) return null
   const ready = !!pending
   return <div className="card" style={ready ? { borderColor: 'var(--acc)' } : null}>
-    <div className="today-row" onClick={() => nav(ready ? '/coach/proposal' : '/coach')}>
+    <div role="button" tabIndex={0} className="today-row" onClick={() => nav(ready ? '/coach/proposal' : '/coach')}>
       <div className="row" style={{ gap: 9, minWidth: 0 }}>
         <span className="lrow-i" style={{ background: ready ? 'var(--acc)' : 'var(--orange)' }}><Icon name="sparkles" /></span>
         <div style={{ minWidth: 0 }}>
@@ -70,7 +70,7 @@ export default function Home() {
     const iso = isoOf(d)
     const eff = effectiveRoutineId(S, iso), ovr = S.dayPlan[iso] !== undefined, done = doneDays.has(iso)
     const dot = done ? ' done' : ovr && eff ? ' ovr' : eff ? ' plan' : ''
-    strip.push(<div key={i} className={'wday' + (iso === todayISO() ? ' today' : '')} onClick={() => dayOverrideSheet(iso)}>
+    strip.push(<div role="button" tabIndex={0} key={i} className={'wday' + (iso === todayISO() ? ' today' : '')} onClick={() => dayOverrideSheet(iso)}>
       <div className="lbl">{t(DAYS[d.getDay()])}</div><div className="num">{d.getDate()}</div><div className={'dot' + dot} /></div>)
   }
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6)
@@ -114,7 +114,7 @@ export default function Home() {
         <button className="iconbtn" style={{ width: 30, height: 30, fontSize: 15 }} onClick={() => setWeekOffset(w => w + 1)} aria-label="Next week"><Icon name="chevronRight" /></button>
       </div>
       <div className="week">{strip}</div>
-      <div className="today-row" onClick={onToday}>
+      <div role="button" tabIndex={0} className="today-row" onClick={onToday}>
         <div className="row" style={{ gap: 9, minWidth: 0 }}>
           <span className="lrow-i" style={{ background: S.active ? 'var(--orange)' : routine ? 'var(--acc)' : 'var(--surface-3)' }}>
             <Icon name={S.active ? 'timer' : routine ? glyphOf(routine.emoji) : 'moon'} />
@@ -134,7 +134,7 @@ export default function Home() {
     {coachOn && <CoachCard nav={nav} />}
 
     <div className="cols">
-      {nOn && <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => nav('/nutrition')}>
+      {nOn && <div role="button" tabIndex={0} className="card tappable" style={{ cursor: 'pointer' }} onClick={() => nav('/nutrition')}>
         <div className="row between" style={{ marginBottom: 6 }}>
           <h2 style={{ margin: 0 }}>{t('Food')}</h2>
           <Icon name="flame" className="chev" style={{ fontSize: 20, color: 'var(--orange)' }} />
@@ -145,7 +145,7 @@ export default function Home() {
         <Button icon="plus" onClick={e => { e.stopPropagation(); openLog(slotForNow(), todayISO()) }}>{t('Add food')}</Button>
       </div>}
 
-      <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => nav('/water')}>
+      <div role="button" tabIndex={0} className="card tappable" style={{ cursor: 'pointer' }} onClick={() => nav('/water')}>
         <div className="row between" style={{ marginBottom: 6 }}>
           <h2 style={{ margin: 0 }}>{t('Water')}</h2>
           <Icon name="water" className="chev" style={{ fontSize: 20, color: 'var(--teal)' }} />
@@ -206,7 +206,7 @@ export default function Home() {
       </> : <div className="muted small">{t("No entries yet — log your weight to start the curve. It's also asked before every workout.")}</div>}
     </div>
 
-    <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>
+    <div role="button" tabIndex={0} className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>
       <div className="row between">
         <div>
           <div className="row" style={{ gap: 7, fontSize: 22, fontWeight: 600, letterSpacing: '-.021em' }}>

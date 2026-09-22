@@ -125,7 +125,7 @@ export default function CoachIntake() {
           value={p.daysPerWeek} onChange={v => set({ daysPerWeek: v })} />
         <div className="muted small" style={{ margin: '14px 0 8px' }}>{t('Which days suit you? (optional)')}</div>
         <div className="week">
-          {[1, 2, 3, 4, 5, 6, 0].map(d => <div key={d} className={'wday' + (p.preferredDays.includes(d) ? ' today' : '')}
+          {[1, 2, 3, 4, 5, 6, 0].map(d => <div role="button" tabIndex={0} key={d} className={'wday' + (p.preferredDays.includes(d) ? ' today' : '')}
             onClick={() => toggleDay(d)} style={{ cursor: 'pointer' }}>
             <div className="lbl">{t(DAYN[d]).slice(0, 2)}</div>
             <div className={'dot' + (p.preferredDays.includes(d) ? ' plan' : '')} />

@@ -212,7 +212,7 @@ function StatusCard({ job, pending, nav }) {
   </div>
 
   if (pending) return <div className="card" style={{ borderColor: 'var(--acc)' }}>
-    <div className="today-row" onClick={() => nav('/coach/proposal')}>
+    <div role="button" tabIndex={0} className="today-row" onClick={() => nav('/coach/proposal')}>
       <div className="row" style={{ gap: 9, minWidth: 0 }}>
         <span className="lrow-i" style={{ background: 'var(--acc)' }}><Icon name="clipboard" /></span>
         <div style={{ minWidth: 0 }}>
@@ -300,7 +300,7 @@ function LogCard({ coach }) {
     <div className="list">
       {log.slice(0, 20).map(e => {
         const applied = (e.decisions || []).filter(d => d.status === 'accepted').length
-        return <div key={e.id} className="item" onClick={() => detail(e)}>
+        return <div role="button" tabIndex={0} key={e.id} className="item" onClick={() => detail(e)}>
           <div className="grow">
             <div className="tt">{e.kind === 'create' ? t('Built a plan') : e.kind === 'revert' ? t('Undid the last changes') : t('Reviewed your training')}</div>
             <div className="ss">{fmtDate(new Date(e.at).toISOString().slice(0, 10))}
