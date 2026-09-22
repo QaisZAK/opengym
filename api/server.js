@@ -157,6 +157,29 @@ setInterval(() => {
 // interval could sit on your target minute for up to 59s before noticing. 10s caps that at ~9s.
 }, 10000).unref();
 
+// Water reminders (nutrition.water.reminder): nudge every N minutes inside the user's own window,
+// on their own clock, until they reach the daily goal. Cadence tracked per user with lastWaterPush.
+setInterval(() => {
+  for (const user of db.users) {
+    if (!db.subs.some(s => s.userId === user.id)) continue;
+    const S = readState(user.id);
+    const wr = S?.nutrition?.water?.reminder;
+    if (!wr?.on) continue;
+    const now = userNow(wr.tz || 'UTC');
+    if (!now) continue;                                        // unknown tz — skip rather than guess
+    if ((wr.from && now.hhmm < wr.from) || (wr.to && now.hhmm > wr.to)) continue;  // outside the window
+    const water = S.nutrition.water;
+    const goal = water.goalMl || 0;
+    const drank = (water.log && water.log[now.date]) || 0;
+    if (goal > 0 && drank >= goal) continue;                   // already hit today's goal
+    const every = Math.max(30, wr.everyMin || 120) * 60000;
+    if (user.lastWaterPush && Date.now() - user.lastWaterPush < every) continue;
+    user.lastWaterPush = Date.now();
+    saveDb();
+    sendPush(user.id, { title: '💧 Time for water', body: 'Stay hydrated — log a glass in openGym.', tag: 'water' });
+  }
+}, 60000).unref();
+
 /* ---------- sessions (signed cookie) ---------- */
 function sign(payload) {
   const mac = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');

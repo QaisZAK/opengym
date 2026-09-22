@@ -4,7 +4,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { fmtNum, fmtDate, todayISO, isoOf, uid } from '../lib/format.js'
+import { fmtNum, fmtDate, todayISO, isoOf, uid, localTZ } from '../lib/format.js'
 import { lastBW } from '../lib/history.js'
 import { t } from '../lib/i18n.js'
 import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, ACTIVITY } from '../lib/nutrition.js'
@@ -28,6 +28,9 @@ function nz(s) {
   n.targets = n.targets || { kcal: null, protein: null, carbs: null, fat: null, manual: false }
   n.log = n.log || {}; n.foods = n.foods || []; n.meals = n.meals || []; n.recipes = n.recipes || []
   n.prefs = n.prefs || { avoid: '', halal: false, notes: '' }
+  const w = n.water = n.water || {}
+  w.goalMl = w.goalMl || 2000; w.log = w.log || {}
+  w.reminder = w.reminder || { on: false, everyMin: 120, from: '09:00', to: '22:00', tz: null }
   return n
 }
 
@@ -48,6 +51,9 @@ const logMeal = (m, iso, slot) => update(s => {
 // A recipe behaves like a per-serving food when logging (qty = servings), so it reuses Portion.
 const recFood = r => ({ name: r.name, per: 'serving', ...recipePerServing(r), source: 'recipe' })
 const savePrefs = p => update(s => { const n = nz(s); n.prefs = p })
+const addWater = (iso, ml) => update(s => { const n = nz(s); n.water.log[iso] = Math.max(0, (n.water.log[iso] || 0) + ml) })
+const setWaterGoal = ml => update(s => { const n = nz(s); n.water.goalMl = Math.max(0, Math.round(ml) || 0) })
+const setWaterReminder = patch => update(s => { const n = nz(s); n.water.reminder = { ...n.water.reminder, ...patch, tz: localTZ() } })
 
 // Suggestion candidates: the user's saved meals, recipes and custom foods (a default portion of
 // each), padded with high-protein catalog staples when they've saved little.
@@ -569,6 +575,71 @@ function Suggest({ iso, close }) {
 const openSuggest = iso => ui().openSheet(close => <Suggest iso={iso} close={close} />)
 const openPrefs = () => ui().openSheet(close => <Prefs close={close} />)
 
+function WaterCard({ water, iso }) {
+  const ml = (water.log && water.log[iso]) || 0
+  const goal = water.goalMl || 2000
+  const pct = goal > 0 ? Math.min(100, Math.round((ml / goal) * 100)) : 0
+  return <div className="card">
+    <div className="row between" style={{ marginBottom: 6 }}>
+      <h2 style={{ margin: 0 }}>{t('Water')}</h2>
+      <button className="iconbtn" onClick={openWater} aria-label={t('Water settings')}><Icon name="gear" /></button>
+    </div>
+    <div className="row between" style={{ alignItems: 'baseline', marginBottom: 8 }}>
+      <span className="stat-v">{fmtNum(ml)} <span className="small dim">/ {fmtNum(goal)} ml</span></span>
+      <span className="small dim">{pct}%</span>
+    </div>
+    <div style={{ height: 8, borderRadius: 4, background: 'var(--sep)', overflow: 'hidden', marginBottom: 12 }}>
+      <div style={{ width: pct + '%', height: '100%', background: 'var(--teal)' }} />
+    </div>
+    <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <Button size="sm" icon="plus" onClick={() => addWater(iso, 250)}>250 ml</Button>
+      <Button size="sm" icon="plus" onClick={() => addWater(iso, 500)}>500 ml</Button>
+      <Button size="sm" onClick={() => openWaterAdd(iso)}>{t('Custom')}</Button>
+      {ml > 0 && <Button size="sm" variant="ghost" className="dim" icon="reset" onClick={() => addWater(iso, -250)}>{t('Undo')}</Button>}
+    </div>
+  </div>
+}
+
+function WaterAdd({ iso, close }) {
+  const [ml, setMl] = useState(300)
+  return <>
+    <h3>{t('Add water')}</h3>
+    <div className="row cfgrow" style={{ margin: '8px 0 14px' }}><Stepper label={t('Millilitres')} value={ml} step={50} decimal={false} onChange={setMl} unit="ml" /></div>
+    <Button variant="primary" onClick={() => { const n = Math.round(ml); if (n > 0) { addWater(iso, n); close(); toast(t('Added {0} ml', n)) } }}>{t('Add')}</Button>
+  </>
+}
+
+function WaterSettings({ close }) {
+  const w = getS().nutrition?.water || {}, r = w.reminder || {}
+  const [goal, setGoal] = useState(w.goalMl || 2000)
+  const [on, setOn] = useState(!!r.on)
+  const [every, setEvery] = useState(r.everyMin || 120)
+  const [from, setFrom] = useState(r.from || '09:00')
+  const [to, setTo] = useState(r.to || '22:00')
+  const save = () => {
+    setWaterGoal(goal)
+    setWaterReminder({ on, everyMin: Math.max(30, Math.round(every) || 120), from, to })
+    close(); toast(t('Saved'))
+  }
+  return <>
+    <h3>{t('Water settings')}</h3>
+    <div className="row cfgrow" style={{ margin: '8px 0' }}><Stepper label={t('Daily goal (ml)')} value={goal} step={100} decimal={false} onChange={setGoal} unit="ml" /></div>
+    <div className="row between" style={{ padding: '12px 2px' }}><span className="lrow-t">{t('Reminders')}</span><Switch checked={on} onChange={setOn} /></div>
+    {on && <>
+      <div className="row cfgrow" style={{ margin: '8px 0' }}><Stepper label={t('Every (minutes)')} value={every} step={30} decimal={false} onChange={setEvery} /></div>
+      <div className="row cfgrow" style={{ margin: '8px 0' }}>
+        <div className="stp-w"><span className="stp-l">{t('From')}</span><input type="time" className="timef" value={from} onChange={e => setFrom(e.target.value)} /></div>
+        <div className="stp-w"><span className="stp-l">{t('To')}</span><input type="time" className="timef" value={to} onChange={e => setTo(e.target.value)} /></div>
+      </div>
+      <div className="dim small" style={{ margin: '2px 2px' }}>{t('Reminders arrive as notifications — turn Notifications on in Settings too.')}</div>
+    </>}
+    <div style={{ height: 12 }} />
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+  </>
+}
+const openWater = () => ui().openSheet(close => <WaterSettings close={close} />)
+const openWaterAdd = iso => ui().openSheet(close => <WaterAdd iso={iso} close={close} />)
+
 /* ============================ view ============================ */
 export default function Nutrition() {
   const S = useStore(s => s.S)
@@ -619,6 +690,8 @@ export default function Nutrition() {
     </div>
 
     {MEALS.map(m => <MealSection key={m} meal={m} iso={iso} entries={entries} />)}
+
+    <WaterCard water={n.water || {}} iso={iso} />
 
     <div className="dim small" style={{ textAlign: 'center', margin: '6px 0 4px', lineHeight: 1.6 }}>
       {t('Regional dishes are estimates — edit a portion to match your recipe.')}
