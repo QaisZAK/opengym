@@ -337,6 +337,45 @@ export function validateReview(data, plan) {
   };
 }
 
+/* =============================== meal plans =============================== */
+
+const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
+const UNITS = ['g', 'ml', 'serving'];
+const inRange = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
+
+/**
+ * Validate a meal plan into the shape the Food tab logs directly. Closed lists for slot and
+ * unit, bounded numbers, clamped strings; anything off-contract is an error the repair round
+ * can see. Returns { ok, plan } or { ok:false, errors }.
+ */
+export function validateMeals(data) {
+  const errors = [];
+  if (!data || typeof data !== 'object') return fail(['answer must be an object']);
+  const meals = Array.isArray(data.meals) ? data.meals : null;
+  if (!meals || meals.length < 1 || meals.length > 6) return fail(['meals must be an array of 1–6 meals']);
+  const out = meals.map((m, i) => {
+    const at = `meals[${i}]`;
+    if (!SLOTS.includes(m?.slot)) errors.push(`${at}.slot must be one of ${SLOTS.join(', ')}`);
+    if (!isStr(m?.name)) errors.push(`${at}.name is required`);
+    const items = Array.isArray(m?.items) ? m.items : [];
+    if (items.length < 1 || items.length > 8) errors.push(`${at}.items must have 1–8 items`);
+    return {
+      slot: m?.slot, name: clampStr(m?.name, 60),
+      items: items.slice(0, 8).map((it, j) => {
+        const a = `${at}.items[${j}]`;
+        if (!isStr(it?.name)) errors.push(`${a}.name is required`);
+        if (!inRange(it?.qty, 0.1, 2000)) errors.push(`${a}.qty must be a number between 0.1 and 2000`);
+        if (!UNITS.includes(it?.unit)) errors.push(`${a}.unit must be one of ${UNITS.join(', ')}`);
+        if (!inRange(it?.kcal, 0, 3000)) errors.push(`${a}.kcal must be a number between 0 and 3000`);
+        for (const k of ['protein', 'carbs', 'fat']) if (!inRange(it?.[k], 0, 300)) errors.push(`${a}.${k} must be a number between 0 and 300`);
+        return { name: clampStr(it?.name, 60), qty: it?.qty, unit: it?.unit, kcal: Math.round(it?.kcal), protein: Math.round(it?.protein * 10) / 10, carbs: Math.round(it?.carbs * 10) / 10, fat: Math.round(it?.fat * 10) / 10 };
+      })
+    };
+  });
+  if (errors.length) return fail(errors.slice(0, 20));
+  return { ok: true, plan: { meals: out, notes: clampStr(isStr(data.notes) ? data.notes : '', 300) } };
+}
+
 function fail(errors) { return { ok: false, errors }; }
 
 /** Contract-version guard: a payload we understand answered by something we don't. */

@@ -4,14 +4,16 @@ import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { ACCENTS, todayISO, localTZ } from '../lib/format.js'
 import { effortOf } from '../lib/history.js'
-import { webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
+import { webauthnOK, passkeyLogin, passkeyRegister, passkeyAdd, IS_ANDROID } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
 import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS } from '../lib/i18n.js'
 import { DEMO, REPO } from '../lib/demo.js'
 import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
-import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
+import { loadStarterPlan, confirmSheet, importFromApp, photosSheet } from '../sheets.jsx'
 import { coachAvailable, hasConsent } from '../lib/coach.js'
+import { openTargets } from './Nutrition.jsx'
+import { driveConfigured, connectDrive, disconnectDrive } from '../lib/gdrive.js'
 import { forgetCoach } from '../lib/coach-api.js'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
@@ -55,6 +57,10 @@ export default function Settings() {
     try { const u = await passkeyLogin(); setUser(u); await pullState(); toast(t('Welcome back, {0}', u.name)) }
     catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Sign-in failed')) }
   }
+  const addPasskey = async () => {
+    try { const n = await passkeyAdd(); setUser({ ...user, passkeys: n }); toast(t('Passkey added — {0} on this profile', n)) }
+    catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Could not add the passkey')) }
+  }
   const registerHere = () => useUI.getState().openSheet(close => <RegisterInline close={close} setUser={setUser} pushState={pushState} pullState={pullState} toast={toast} />)
   // Ends the profile's sessions on every device — this one included, so on success it lands in
   // the same place as the plain sign-out above (home, local data cleared). On failure nothing
@@ -67,6 +73,16 @@ export default function Settings() {
       try { await signOutAll(); nav('/home'); toast(t('Signed out on all devices')) }
       catch (e) { toast(t('Could not sign out everywhere — you are still signed in.')) }
     },
+  })
+
+  const connectGoogle = async () => {
+    try { await connectDrive(config.google.clientId); update(s => { s.google = { ...(s.google || {}), connected: true } }); toast(t('Google Drive connected')) }
+    catch (e) { if (!/popup|closed|cancel/i.test(e.message || '')) toast(t('Could not connect: {0}', e.message)) }
+  }
+  const disconnectGoogle = () => confirmSheet({
+    title: t('Disconnect Google Drive?'), message: t('New weigh-ins won’t attach photos. Photos already in your Drive are left untouched.'),
+    confirmText: t('Disconnect'), danger: true,
+    onConfirm: () => { disconnectDrive(); update(s => { s.google = null }); toast(t('Google Drive disconnected')) }
   })
 
   return <div className="narrow">
@@ -89,6 +105,10 @@ export default function Settings() {
           onClick={() => window.open(REPO, '_blank', 'noopener')} />
       </> : user ? <>
         <Row icon="personCircle" iconTint="var(--grey)" title={user.name} subtitle={t('Signed in with passkey — data syncs to this profile.')} />
+        {webauthnOK() && <Row icon="key" iconTint={user.passkeys === 1 ? 'var(--orange)' : 'var(--blue)'} title={t('Add another passkey')} accessory="chevron"
+          subtitle={user.passkeys === 1 ? t('Only one passkey — add a backup (another phone or a security key) so losing a device can’t lock you out.')
+            : user.passkeys > 1 ? t('{0} passkeys on this profile', user.passkeys) : t('A backup device keeps you from getting locked out.')}
+          onClick={addPasskey} />}
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
         <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={() => confirmSheet({ title: t('Sign out?'), message: t('Your data is synced to your profile first, then cleared from this device.'), confirmText: t('Sign out'), danger: true, onConfirm: () => { signOut(); nav('/home') } })} />
         <Row icon="shield" iconTint="var(--red)" title={t('Sign out everywhere')} subtitle={t('Ends this profile’s sessions on all your devices.')} danger onClick={signOutEverywhere} />
@@ -100,6 +120,12 @@ export default function Settings() {
       )}
     </Section>
     {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
+
+    {/* ---------- progress (stats + history live here now) ---------- */}
+    <Section title={t('Progress')}>
+      <Row icon="chart" iconTint="var(--acc)" title={t('Stats')} subtitle={t('Charts, records & activity')} accessory="chevron" onClick={() => nav('/stats')} />
+      <Row icon="history" iconTint="var(--blue)" title={t('History')} subtitle={t('All your workouts')} accessory="chevron" onClick={() => nav('/history')} />
+    </Section>
 
     {/* ---------- general ---------- */}
     <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
@@ -153,6 +179,32 @@ export default function Settings() {
       </Section>
     )}
 
+    {/* ---------- nutrition (off by default; adds the Food tab) ---------- */}
+    <Section title={t('Nutrition')} footer={S.nutrition?.on
+      ? t('Adds the Food tab — log meals and track calories & macros against your targets.')
+      : t('Track calories and macros. Off by default — turn it on to add the Food tab.')}>
+      <Row icon="flame" iconTint="var(--orange)" title={t('Nutrition tracking')}>
+        <Switch checked={!!S.nutrition?.on} onChange={v => update(s => { if (!s.nutrition) s.nutrition = JSON.parse(JSON.stringify(DEF.nutrition)); s.nutrition.on = v })} />
+      </Row>
+      {S.nutrition?.on && <>
+        <Row icon="target" iconTint="var(--purple)" title={t('Goals & targets')} accessory="chevron" onClick={openTargets} />
+        <Row icon="chart" iconTint="var(--acc)" title={t('Open nutrition')} accessory="chevron" onClick={() => nav('/nutrition')} />
+      </>}
+    </Section>
+
+    {/* ---------- Google Drive (progress photos) — only when the instance has a client id ---------- */}
+    {driveConfigured(config) && <Section title={t('Progress photos')} footer={S.google?.connected
+      ? t('Photos you attach when logging weight are stored in your Google Drive — never on this server.')
+      : t('Connect Google Drive to attach progress photos to your weigh-ins. They live in your Drive, not on the server.')}>
+      {S.google?.connected ? <>
+        <Row icon="camera" iconTint="var(--acc)" title={t('Progress photos')} subtitle={t('Gallery, before & after')} accessory="chevron" onClick={photosSheet} />
+        <Row icon="folder" iconTint="var(--acc)" title={t('Google Drive connected')} subtitle={t('Progress photos go to your Drive')} />
+        <Row icon="signOut" iconTint="var(--red)" title={t('Disconnect')} danger onClick={disconnectGoogle} />
+      </> : (
+        <Row icon="folder" iconTint="var(--blue)" title={t('Connect Google Drive')} subtitle={t('For progress photos')} accessory="chevron" onClick={connectGoogle} />
+      )}
+    </Section>}
+
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 
     {/* ---------- appearance ---------- */}
@@ -160,8 +212,8 @@ export default function Settings() {
       <Row icon="moon" iconTint="var(--indigo)" title={t('Theme')}>
         <Segmented
           className="seg-inline"
-          options={[{ value: 'dark', icon: 'moon', label: t('Dark') }, { value: 'light', icon: 'sun', label: t('Light') }]}
-          value={S.theme === 'light' ? 'light' : 'dark'}
+          options={[{ value: 'system', icon: 'contrast', label: t('Auto') }, { value: 'dark', icon: 'moon', label: t('Dark') }, { value: 'light', icon: 'sun', label: t('Light') }]}
+          value={S.theme === 'light' || S.theme === 'system' ? S.theme : 'dark'}
           onChange={v => update(s => { s.theme = v })}
         />
       </Row>
@@ -187,7 +239,7 @@ export default function Settings() {
 
     {/* ---------- data: fill it, bring things over, back it up, wipe it ---------- */}
     <Section title={t('Data')}>
-      <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan (PPL)')} accessory="chevron" onClick={loadStarterPlan} />
+      <Row icon="sparkles" iconTint="var(--acc)" title={t('Load a starter plan')} accessory="chevron" onClick={loadStarterPlan} />
       <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
         subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}
         accessory="chevron" onClick={() => importRef.current.click()} />
@@ -287,6 +339,11 @@ function MobileReminderCard({ S, update, toast }) {
 }
 
 function PushCard({ S, update, toast }) {
+  const nav = useNavigate()
+  // Notification center settings (read server-side by the reminder loops, see api/notify.js).
+  const N = S.notify || {}
+  const setNotify = patch => update(s => { s.notify = { ...(s.notify || {}), ...patch, tz: localTZ() } })
+  const snoozed = N.snoozeUntil > Date.now()
   const [on, setOn] = useState(false)
   const [busy, setBusy] = useState(false)
   const supported = pushSupported()
@@ -337,7 +394,38 @@ function PushCard({ S, update, toast }) {
             onChange={e => update(s => { s.reminder = { ...(s.reminder || DEF.reminder), time: e.target.value, tz: localTZ() } })} />
         </Row>
       )}
+      {on && <>
+        <Row icon="scale" iconTint="var(--teal)" title={t('Weigh-in reminder')} subtitle={t('Only if you haven’t logged your weight that day.')}>
+          <Switch checked={!!N.weight?.on} onChange={v => setNotify({ weight: { time: '08:00', ...N.weight, on: v } })} />
+        </Row>
+        {N.weight?.on && <Row icon="clock" iconTint="var(--purple)" title={t('Weigh-in time')}>
+          <input type="time" className="timef" value={N.weight.time || '08:00'} onChange={e => setNotify({ weight: { ...N.weight, time: e.target.value } })} />
+        </Row>}
+        <Row icon="flame" iconTint="var(--orange)" title={t('Streak at risk')} subtitle={t('Sunday 18:00, if nothing is logged that week.')}>
+          <Switch checked={!!N.streak?.on} onChange={v => setNotify({ streak: { on: v } })} />
+        </Row>
+        <Row icon="water" iconTint="var(--teal)" title={t('Water reminders')} subtitle={S.nutrition?.water?.reminder?.on ? t('On — change in Water settings') : t('Off — turn on in Water settings')} accessory="chevron" onClick={() => nav('/water')} />
+      </>}
     </Section>
+    {on && <Section title={t('Quiet time')} footer={t('Reminders stay silent during quiet hours or a snooze. Rest-timer alerts still come through.')}>
+      <Row icon="moon" iconTint="var(--indigo)" title={t('Quiet hours')}>
+        <Switch checked={!!N.quiet?.on} onChange={v => setNotify({ quiet: { from: '22:00', to: '07:00', ...N.quiet, on: v } })} />
+      </Row>
+      {N.quiet?.on && <Row icon="clock" iconTint="var(--purple)" title={t('From / to')}>
+        <span className="row" style={{ gap: 6 }}>
+          <input type="time" className="timef" value={N.quiet.from} onChange={e => setNotify({ quiet: { ...N.quiet, from: e.target.value } })} aria-label={t('From')} />
+          <input type="time" className="timef" value={N.quiet.to} onChange={e => setNotify({ quiet: { ...N.quiet, to: e.target.value } })} aria-label={t('To')} />
+        </span>
+      </Row>}
+      {snoozed ? <Row icon="bellSlash" iconTint="var(--grey)" title={t('Snoozed until {0}', new Date(N.snoozeUntil).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }))}>
+        <Button size="sm" onClick={() => setNotify({ snoozeUntil: null })}>{t('Resume')}</Button>
+      </Row> : <Row icon="bellSlash" iconTint="var(--grey)" title={t('Snooze reminders')}>
+        <span className="row" style={{ gap: 6 }}>
+          <Button size="sm" onClick={() => setNotify({ snoozeUntil: Date.now() + 3600000 })}>{t('1 h')}</Button>
+          <Button size="sm" onClick={() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(7, 0, 0, 0); setNotify({ snoozeUntil: d.getTime() }) }}>{t('Till tomorrow')}</Button>
+        </span>
+      </Row>}
+    </Section>}
     {on && <div style={{ marginTop: -12, marginBottom: 22 }}><Button size="sm" icon="bell" onClick={test}>{t('Send test notification')}</Button></div>}
   </>
 }

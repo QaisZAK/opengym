@@ -44,7 +44,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
         provider: cfg.provider,
         providerLabel: cfgStore.providerMeta(cfg).label,
         categories: DATA_CATEGORIES,
-        version: 1
+        version: 2
       });
     },
 
@@ -73,6 +73,23 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
         const job = jobs.enqueue(user.id, { kind: 'review', note: body.note ? String(body.note).slice(0, 1000) : null });
         json(res, 202, { job });
       } catch (e) { failEnqueue(res, e); }
+    },
+
+    // A meal plan for the rest of today (or a full day), from targets + preferences + saved foods.
+    // `today` is the client's local date so "what's left today" means the user's today.
+    'POST /api/coach/meals': async (req, res) => {
+      const user = guard(req, res); if (!user) return;
+      const body = await readBody(req);
+      const today = /^\d{4}-\d{2}-\d{2}$/.test(body.today || '') ? body.today : null;
+      try {
+        const job = jobs.enqueue(user.id, { kind: 'meals', request: body.request ? String(body.request).slice(0, 300) : null, today });
+        json(res, 202, { job });
+      } catch (e) { failEnqueue(res, e); }
+    },
+
+    'POST /api/coach/meals/clear': async (req, res) => {
+      const user = guard(req, res); if (!user) return;
+      json(res, 200, jobs.clearMeals(user.id));
     },
 
     'POST /api/coach/pending/resolve': async (req, res) => {

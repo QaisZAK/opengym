@@ -48,6 +48,30 @@ test('a creation job produces a plan bundle in the app\'s own share format', asy
   assert.ok(s.pending.bundle.routines.length > 0);
 });
 
+test('a meal-plan job fills the slots not eaten yet and keeps its own result', async () => {
+  const uid = 'u-meals';
+  const today = '2026-07-21';
+  writeState(DIR, uid, sampleState({
+    coach: { consent: { agreedAt: new Date().toISOString(), version: 2 } },
+    nutrition: { targets: { kcal: 2200, protein: 160, carbs: 220, fat: 70 }, log: { [today]: [{ meal: 'breakfast', name: 'Oats', kcal: 400, protein: 15, carbs: 60, fat: 8 }] } }
+  }));
+  jobs.enqueue(uid, { kind: 'meals', today });
+  const s = await settle(uid);
+  assert.equal(lastOutcome(uid).outcome, 'ready');
+  assert.equal(s.pending, null, 'a meal plan is not a training proposal');
+  assert.equal(s.mealPlan.date, today);
+  assert.ok(!s.mealPlan.meals.some(m => m.slot === 'breakfast'), 'already-eaten slots are left alone');
+  assert.ok(s.mealPlan.meals.every(m => m.items.every(it => it.kcal >= 0 && ['g', 'ml', 'serving'].includes(it.unit))));
+  jobs.clearMeals(uid);
+  assert.equal(jobs.status(uid).mealPlan, null);
+});
+
+test('meal plans need consent that disclosed nutrition data (v2)', () => {
+  const uid = 'u-meals-v1';
+  writeState(DIR, uid, sampleState());   // consent version 1
+  assert.throws(() => jobs.enqueue(uid, { kind: 'meals' }), e => e.code === 'consent');
+});
+
 test('no consent, no job — the gate is on the server, not the screen', () => {
   const uid = 'u-noconsent';
   writeState(DIR, uid, sampleState({ coach: {} }));

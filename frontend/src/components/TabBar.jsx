@@ -13,7 +13,11 @@ export default function TabBar({ onStart }) {
   const isGuest = useStore(s => s.isGuest())
   if (!user && !isGuest) return null
   const cur = loc.pathname.split('/')[1] || 'home'
-  const on = k => cur === k || (cur === 'history' && k === 'stats') || (cur === 'settings' && k === 'home')
+  // Exercises now live under Plan, and Stats/History under Settings (reached from Home) — fold
+  // those sub-pages onto their parent tab so the right one stays lit.
+  const on = k => cur === k
+    || (k === 'plan' && cur === 'library')
+    || (k === 'home' && (cur === 'settings' || cur === 'stats' || cur === 'history'))
 
   const startWorkout = () => {
     if (!S.active) {
@@ -36,8 +40,8 @@ export default function TabBar({ onStart }) {
         <span className="cir"><Icon name={S.active ? 'play' : 'dumbbell'} /></span>
         <span>{S.active ? t('Resume') : t('Start')}</span>
       </button>
-      <Tab k="stats" icon="chart" to="/stats" label={t('Stats')} />
-      <Tab k="library" icon="list" to="/library" label={t('Exercises')} />
+      {S.nutrition?.on && <Tab k="nutrition" icon="flame" to="/nutrition" label={t('Food')} />}
+      <Tab k="water" icon="water" to="/water" label={t('Water')} />
     </nav>
   )
 }

@@ -34,8 +34,49 @@ export const DATA_CATEGORIES = [
   'training',    // logged sets, targets, effort ratings, durations, PRs in the review window
   'bodyweight',  // weigh-ins in the window and your goal weight
   'profile',     // the intake answers you gave the Coach, including any limitations
-  'prefs'        // unit, language, effort scale
+  'prefs',       // unit, language, effort scale
+  'nutrition'    // meal plans only: targets, today's intake, food preferences, saved foods & meals
 ];
+
+// Which routine is planned on a day (same rule as the app's effectiveRoutineId / server.js).
+function effectiveRoutineId(S, iso) {
+  const ov = S.dayPlan?.[iso];
+  if (ov === 'rest') return null;
+  if (ov && S.routines?.some(r => r.id === ov)) return ov;
+  return S.week?.[new Date(iso + 'T12:00:00').getDay()] || null;
+}
+
+/**
+ * Payload for a meal-plan job (kind 'meals'). Same allowlist discipline as build(): every field
+ * copied by name, lists capped, free text length-limited. No training history beyond whether
+ * today is a training day.
+ */
+export function buildMeals(S, uid, { request = null, today } = {}) {
+  const n = S.nutrition || {};
+  const num = v => (Number.isFinite(+v) ? +v : 0);
+  const tg = n.targets || {};
+  const log = (n.log && n.log[today]) || [];
+  const eaten = log.reduce((a, e) => ({ kcal: a.kcal + num(e.kcal), protein: a.protein + num(e.protein), carbs: a.carbs + num(e.carbs), fat: a.fat + num(e.fat) }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+  const r1 = v => Math.round(v * 10) / 10;
+  const food = f => ({ name: String(f.name || '').slice(0, 60), per: f.per === 'serving' ? 'serving' : '100g', kcal: num(f.kcal), protein: num(f.protein), carbs: num(f.carbs), fat: num(f.fat) });
+  const rid = effectiveRoutineId(S, today);
+  const routine = rid ? (S.routines || []).find(r => r.id === rid) : null;
+  return {
+    coach_contract: CONTRACT,
+    kind: 'meals',
+    profile: handle(uid),
+    meta: { lang: S.lang || 'en', today },
+    targets: { kcal: num(tg.kcal), protein: num(tg.protein), carbs: num(tg.carbs), fat: num(tg.fat), goal: n.profile?.goal || null },
+    eaten: { kcal: Math.round(eaten.kcal), protein: r1(eaten.protein), carbs: r1(eaten.carbs), fat: r1(eaten.fat) },
+    remaining: { kcal: Math.round(num(tg.kcal) - eaten.kcal), protein: r1(num(tg.protein) - eaten.protein), carbs: r1(num(tg.carbs) - eaten.carbs), fat: r1(num(tg.fat) - eaten.fat) },
+    eatenSlots: [...new Set(log.map(e => e.meal).filter(m => ['breakfast', 'lunch', 'dinner', 'snack'].includes(m)))],
+    prefs: { avoid: String(n.prefs?.avoid || '').slice(0, 200), halal: !!n.prefs?.halal, notes: String(n.prefs?.notes || '').slice(0, 300) },
+    savedFoods: (n.foods || []).slice(0, 40).map(food),
+    savedMeals: (n.meals || []).slice(0, 20).map(m => ({ name: String(m.name || '').slice(0, 60), items: (m.items || []).slice(0, 8).map(it => ({ name: String(it.food?.name || '').slice(0, 60), qty: num(it.qty), unit: it.unit })) })),
+    training: { today: routine ? String(routine.name || 'Workout').slice(0, 40) : (rid ? 'Workout' : 'Rest day') },
+    request: request ? String(request).slice(0, 300) : null
+  };
+}
 
 /** Stable per-profile pseudonym. Never the uid, never reversible, same across jobs. */
 function handle(uid) {
@@ -56,7 +97,7 @@ const modeOf = (cfg, ex) => {
 function readSession(entry, fallback) {
   const target = (entry && entry.target) || fallback || {};
   const mode = modeOf(target, LIB_BY_ID.get(entry?.id));
-  const sets = (entry && entry.sets) || [];
+  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup' && s.type !== 'drop');
   const planned = target.sets || sets.length;
   const enough = sets.length >= planned;
   if (mode === 'time') {
@@ -225,6 +266,7 @@ function cleanWorkout(w) {
         if (s.speed != null) o.speed = s.speed;
         if (s.rir != null) o.rir = s.rir;
         if (s.rpe != null) o.rpe = s.rpe;
+        if (s.type) o.type = s.type;   // warmup / drop / amrap / failure
         return o;
       })
     }))
@@ -293,7 +335,7 @@ export function build(S, uid, opts = {}) {
     // start from evidence rather than optimism (B2/FR-20).
     const best = {};
     (S.workouts || []).forEach(w => (w.entries || []).forEach(en => en.sets?.forEach(s => {
-      if (s.done && s.w > 0) best[en.id] = Math.max(best[en.id] || 0, s.w);
+      if (s.done && s.type !== 'warmup' && s.w > 0) best[en.id] = Math.max(best[en.id] || 0, s.w);
     })));
     if (Object.keys(best).length) {
       p.history = {

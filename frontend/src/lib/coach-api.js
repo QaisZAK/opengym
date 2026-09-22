@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api.js'
 import { DEMO } from './demo.js'
 import { useStore } from '../store/useStore.js'
+import { todayISO } from './format.js'
 
 const POLL_MS = 3000        // a job is running: often enough to feel live
 const IDLE_MS = 60000       // a Coach screen is open but nothing is running
@@ -27,6 +28,9 @@ export const requestPlan = async intake => DEMO ? (await demo()).demoPlan(S(), i
 export const refinePlan = async text => DEMO ? (await demo()).demoRefine(S()) : api('/api/coach/plan', { method: 'POST', body: JSON.stringify({ refine: text }) })
 export const resolvePending = async body => DEMO ? (await demo()).demoResolve() : api('/api/coach/pending/resolve', { method: 'POST', body: JSON.stringify(body) })
 export const forgetCoach = async () => DEMO ? (await demo()).demoResolve() : api('/api/coach/forget', { method: 'POST', body: '{}' })
+// Meal plans (job kind 'meals'). `today` is the local date so "what's left today" is the user's today.
+export const requestMeals = request => api('/api/coach/meals', { method: 'POST', body: JSON.stringify({ request: request || '', today: todayISO() }) })
+export const clearMealPlan = () => api('/api/coach/meals/clear', { method: 'POST', body: '{}' })
 export const disclosure = async () => DEMO ? (await demo()).demoDisclosure() : api('/api/coach/disclosure')
 
 /**

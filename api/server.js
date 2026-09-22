@@ -13,6 +13,8 @@ import * as coachConfig from './coach/config.js';
 import * as coachJobs from './coach/jobs.js';
 import { coachRoutes } from './coach/routes.js';
 import { startCadence } from './coach/cadence.js';
+import { foodSearch, foodBarcode, OFF_ATTR } from './food.js';
+import { muted, streakAtRisk } from './notify.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -29,6 +31,9 @@ const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
 // baked into each cookie when it's issued, so lowering this never cuts an existing session short.
 const SESSION_DAYS = Math.max(1, +(process.env.SESSION_DAYS || 90) || 90);
 const MAX_BODY = 5 * 1024 * 1024;
+// Public OAuth client id for the client-side Google Drive integration (progress photos). Safe to
+// expose; there is no client secret in this flow. Absent ⇒ the whole Drive feature stays hidden.
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
 // Secure cookies require HTTPS; over plain http://localhost the flag would drop the cookie
 const SECURE = /^https:/i.test(ORIGIN) ? ' Secure;' : '';
 
@@ -139,6 +144,7 @@ setInterval(() => {
     const now = userNow(S.reminder.tz || 'UTC');
     if (!now || S.reminder.time !== now.hhmm) continue;
     if (user.lastReminder === now.date) continue;
+    if (muted(S, now.hhmm)) continue;          // snoozed or in quiet hours
     if ((S.workouts || []).some(w => w.d === now.date)) continue;
     const rid = effectiveRoutineId(S, now.date);
     if (!rid) continue; // rest day — nothing planned
@@ -154,6 +160,54 @@ setInterval(() => {
   }
 // Checked every 10s (not 60s) — ticks aren't aligned to the top of the minute, so a 60s
 // interval could sit on your target minute for up to 59s before noticing. 10s caps that at ~9s.
+}, 10000).unref();
+
+// Water reminders (nutrition.water.reminder): nudge every N minutes inside the user's own window,
+// on their own clock, until they reach the daily goal. Cadence tracked per user with lastWaterPush.
+setInterval(() => {
+  for (const user of db.users) {
+    if (!db.subs.some(s => s.userId === user.id)) continue;
+    const S = readState(user.id);
+    const wr = S?.nutrition?.water?.reminder;
+    if (!wr?.on) continue;
+    const now = userNow(wr.tz || 'UTC');
+    if (!now) continue;                                        // unknown tz — skip rather than guess
+    if ((wr.from && now.hhmm < wr.from) || (wr.to && now.hhmm > wr.to)) continue;  // outside the window
+    if (muted(S, now.hhmm)) continue;                          // snoozed or in quiet hours
+    const water = S.nutrition.water;
+    const goal = water.goalMl || 0;
+    const day = water.log && water.log[now.date];              // entry array now, or an old plain ml number
+    const drank = Array.isArray(day) ? day.reduce((a, e) => a + (+e.ml || 0), 0) : (+day || 0);
+    if (goal > 0 && drank >= goal) continue;                   // already hit today's goal
+    const every = Math.max(30, wr.everyMin || 120) * 60000;
+    if (user.lastWaterPush && Date.now() - user.lastWaterPush < every) continue;
+    user.lastWaterPush = Date.now();
+    saveDb();
+    sendPush(user.id, { title: '💧 Time for water', body: 'Stay hydrated — log a glass in openGym.', tag: 'water' });
+  }
+}, 60000).unref();
+
+// Weigh-in reminder (S.notify.weight) at the user's time if nothing is logged today, and a
+// Sunday-evening "streak at risk" nudge (S.notify.streak). Each fires at most once a day.
+const STREAK_AT = '18:00';
+setInterval(() => {
+  for (const user of db.users) {
+    if (!db.subs.some(s => s.userId === user.id)) continue;
+    const S = readState(user.id);
+    const n = S?.notify;
+    if (!n || !(n.weight?.on || n.streak?.on)) continue;
+    const now = userNow(n.tz || S.reminder?.tz || 'UTC');
+    if (!now || muted(S, now.hhmm)) continue;
+    if (n.weight?.on && n.weight.time === now.hhmm && user.lastWeightPush !== now.date
+      && !(S.bodyweight || []).some(b => b.d === now.date)) {
+      user.lastWeightPush = now.date; saveDb();
+      sendPush(user.id, { title: '⚖️ Weigh-in', body: 'Step on the scale and log it — it keeps your trend honest.', tag: 'weight' });
+    }
+    if (n.streak?.on && now.hhmm === STREAK_AT && user.lastStreakPush !== now.date && streakAtRisk(S.workouts, now.date)) {
+      user.lastStreakPush = now.date; saveDb();
+      sendPush(user.id, { title: '🔥 Streak at risk', body: 'No workout logged this week yet — today keeps the streak alive.', tag: 'streak' });
+    }
+  }
 }, 10000).unref();
 
 /* ---------- sessions (signed cookie) ---------- */
@@ -273,13 +327,13 @@ const routes = {
   // the app it was before the feature existed.
   'GET /api/config': async (req, res) => {
     const coach = coachConfig.publicConfig();
-    json(res, 200, { invite_only: INVITE_ONLY, ...(coach ? { coach } : {}) });
+    json(res, 200, { invite_only: INVITE_ONLY, ...(coach ? { coach } : {}), ...(GOOGLE_CLIENT_ID ? { google: { clientId: GOOGLE_CLIENT_ID } } : {}) });
   },
 
   'GET /api/me': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } });
+    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user), passkeys: db.creds.filter(x => x.userId === user.id).length } });
   },
 
   'POST /api/register/options': async (req, res) => {
@@ -335,6 +389,50 @@ const routes = {
     });
     saveDb();
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
+  },
+
+  // Attach another passkey (a second phone, a security key) to the signed-in account — the only
+  // way back in if the one device holding the passkey is lost. Same user handle as the original
+  // registration, and existing credentials are excluded so an authenticator can't enrol twice.
+  'POST /api/register/add/options': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const mine = db.creds.filter(x => x.userId === user.id);
+    const options = await generateRegistrationOptions({
+      rpName: RP_NAME, rpID: RP_ID,
+      userID: Buffer.from(user.id), userName: user.name, userDisplayName: user.name,
+      attestationType: 'none',
+      authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+      excludeCredentials: mine.map(x => ({ id: x.id, transports: x.transports }))
+    });
+    const cid = putChallenge({ challenge: options.challenge, addFor: user.id });
+    json(res, 200, { cid, options });
+  },
+
+  'POST /api/register/add/verify': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const c = takeChallenge(body.cid);
+    if (!c || c.addFor !== user.id) return json(res, 400, { error: 'challenge expired — try again' });
+    let verification;
+    try {
+      verification = await verifyRegistrationResponse({
+        response: body.credential, expectedChallenge: c.challenge,
+        expectedOrigin: ORIGIN, expectedRPID: RP_ID, requireUserVerification: false
+      });
+    } catch (e) { return json(res, 400, { error: 'verification failed: ' + e.message }); }
+    if (!verification.verified) return json(res, 400, { error: 'not verified' });
+    const { credential } = verification.registrationInfo;
+    if (db.creds.find(x => x.id === credential.id)) return json(res, 409, { error: 'that passkey is already registered' });
+    db.creds.push({
+      id: credential.id, userId: user.id,
+      publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+      counter: credential.counter || 0,
+      transports: body.credential?.response?.transports || []
+    });
+    saveDb();
+    json(res, 200, { passkeys: db.creds.filter(x => x.userId === user.id).length });
   },
 
   'POST /api/login/options': async (req, res) => {
@@ -471,6 +569,27 @@ const routes = {
       });
     } else presence.delete(user.id);
     json(res, 200, { ok: true });
+  },
+
+  /* ---------- food data (Open Food Facts proxy) ---------- */
+  // Proxied so the server sets the User-Agent OFF requires and caches results (food.js). The
+  // router matches exact paths only, so lookups use ?q= / ?code= like /api/admin/user?id=.
+  'GET /api/food/search': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const q = (new URL(req.url, 'http://x').searchParams.get('q') || '').trim();
+    if (q.length < 2) return json(res, 200, { results: [], attribution: OFF_ATTR });
+    json(res, 200, { results: await foodSearch(q), attribution: OFF_ATTR });
+  },
+
+  'GET /api/food/barcode': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const code = (new URL(req.url, 'http://x').searchParams.get('code') || '').replace(/[^0-9]/g, '');
+    if (!code) return json(res, 400, { error: 'code required' });
+    const food = await foodBarcode(code);
+    if (!food) return json(res, 404, { error: 'not found' });
+    json(res, 200, { food, attribution: OFF_ATTR });
   },
 
   /* ---------- admin dashboard ---------- */

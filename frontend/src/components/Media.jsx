@@ -17,7 +17,7 @@ export default function Media({ ex, id, compact, minimizable }) {
   const mini = minimizable && gifSize === 'mini'
   const toggleSize = e => { e.stopPropagation(); update(s => { s.gifSize = mini ? 'full' : 'mini' }) }
   return (
-    <div className={'exmedia' + (compact ? ' compact' : '') + (mini ? ' mini' : '')} id={id} onClick={() => setPlaying(p => !p)}>
+    <div role="button" tabIndex={0} aria-pressed={playing} className={'exmedia' + (compact ? ' compact' : '') + (mini ? ' mini' : '')} id={id} onClick={() => setPlaying(p => !p)}>
       <img decoding="async" src={playing ? gifSrc(ex) : imgSrc(ex)} alt={ex.n} />
       {minimizable && (
         <button className="giftoggle" onClick={toggleSize}>

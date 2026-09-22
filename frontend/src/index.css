@@ -168,6 +168,11 @@ button,.chip,.tile,.item,.wday,.cal-d,.swatch,.hm-c,.lrow,.seg button,.stp butto
 /* while the rest timer floats above the tab bar, keep its height scrollable-past
    (the rest variant is two rows tall — ~44px more than the single-row work timer) */
 body.resting #app{padding-bottom:calc(250px + var(--sab))}
+/* focus targets that are containers, not controls — no ring when focused programmatically */
+#app:focus-visible,.sheet:focus-visible,.center:focus-visible{outline:none}
+/* skip link: off-screen until a keyboard user tabs onto it */
+.skip{position:fixed;left:12px;top:-60px;z-index:1000;padding:10px 14px;border:0;border-radius:10px;background:var(--acc);color:var(--on-acc);font:inherit;font-weight:600}
+.skip:focus{top:calc(var(--sat) + 8px)}
 @keyframes viewfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 #app.vfade{animation:viewfade var(--med) var(--ease)}
 
@@ -470,6 +475,13 @@ h4.sec{
 /* --- stepper --- */
 .stp-w{display:flex;flex-direction:column;gap:6px;min-width:0}
 .stp-l{font-size:13px;color:var(--label-2);text-align:center}
+/* a bare number field in a labelled column (nutrition forms) — themed like the steppers */
+.stp-w>input.num,.stp-w>input.field{
+  width:100%;min-width:0;height:44px;background:var(--surface-2);border:none;border-radius:var(--r);
+  padding:0 10px;text-align:center;font-size:17px;font-weight:500;color:var(--label);outline:none;
+}
+.stp-w>input.num:focus,.stp-w>input.field:focus{box-shadow:inset 0 0 0 2px var(--acc)}
+.stp-w>input::placeholder{color:var(--label-3);font-weight:400;font-size:14px}
 .stp{
   display:flex;align-items:center;background:var(--surface-2);
   border-radius:10px;overflow:hidden;min-width:0;
@@ -577,6 +589,9 @@ h4.sec{
 .setrow.eff3 .stp.eff button{width:20px}
 .setrow.eff3 .stp .num{font-size:14px}
 .setrow.done .n{background:var(--acc);color:var(--on-acc)}
+.setrow button.n{border:0;padding:0;cursor:pointer;font-family:inherit}
+.setrow .n.wu{color:var(--yellow);font-weight:700}
+.setrow .n.tg{color:var(--orange);font-weight:700}
 .setrow.done{opacity:.45}
 /* why the next target is what it is (issue #17) */
 .progline{

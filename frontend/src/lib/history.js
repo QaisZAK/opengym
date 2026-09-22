@@ -72,7 +72,7 @@ export function setLabel(id, s, cfg) {
   const mode = modeOf(cfg || { id })
   if (mode === 'cardio') return `${s.min || 0} min @ ${fmtNum(s.speed || 0)} km/h`
   if (mode === 'time') return fmtSec(s.sec) + (s.w > 0 ? ` · ${fmtNum(s.w)}` : '')
-  return `${fmtNum(s.w || 0)}×${s.r || 0}` + effortTail(s)
+  return (SET_TYPES[s.type] ? SET_TYPES[s.type] + ' ' : '') + `${fmtNum(s.w || 0)}×${s.r || 0}` + effortTail(s)
 }
 // Default config for a freshly added exercise.
 export function defaultConfig(id, mode) {
@@ -99,13 +99,34 @@ export function cleanupSg(ex) {
   })
 }
 
+// A logged set that counts: warm-ups are done but never feed PRs, volume or progression.
+export const isWork = s => !!s.done && s.type !== 'warmup'
+
+// Set-type tags, cycled by tapping a set's number. Untagged = a normal working set. Drop sets
+// and warm-ups are extras, so progression (readSession) ignores both; AMRAP/failure stay in.
+export const SET_TYPES = { warmup: 'W', drop: 'D', amrap: 'A', failure: 'F' }
+const CYCLE = [undefined, 'warmup', 'drop', 'amrap', 'failure']
+export const nextSetType = type => CYCLE[(CYCLE.indexOf(type) + 1) % CYCLE.length]
+
+// Warm-up ramp up to a working weight: ~40/60/80% for 5/3/2, rounded to the smallest jump and
+// never below the empty bar. Duplicates (light work weights) collapse.
+export function warmupRamp(workW, bar = 0, inc = 2.5) {
+  const out = []
+  if (!(workW > 0)) return out
+  for (const [pct, r] of [[0.4, 5], [0.6, 3], [0.8, 2]]) {
+    const w = Math.max(bar, Math.round((workW * pct) / inc) * inc)
+    if (w < workW && !out.some(s => s.w === w)) out.push({ w, r, type: 'warmup', done: false })
+  }
+  return out
+}
+
 export function lastEntryFor(S, exId) {
   for (let i = S.workouts.length - 1; i >= 0; i--) {
     const en = S.workouts[i].entries.find(e => e.id === exId)
     // `target` is what the session prescribed; finished workouts carry it so labels and the
     // progression engine can read a session back the way it was logged. Older workouts have
     // none — modeOf() falls back to the body part for them, which is what they were.
-    if (en && en.sets.some(s => s.done)) return { d: S.workouts[i].d, sets: en.sets.filter(s => s.done), target: en.target || null }
+    if (en && en.sets.some(isWork)) return { d: S.workouts[i].d, sets: en.sets.filter(isWork), target: en.target || null }
   }
   return null
 }
@@ -113,7 +134,7 @@ export function bestWeightFor(S, exId) {
   let best = 0
   S.workouts.forEach(w => w.entries.forEach(e => {
     if (e.id === exId) {
-      e.sets.forEach(s => { if (s.done && s.w > best) best = s.w })
+      e.sets.forEach(s => { if (isWork(s) && s.w > best) best = s.w })
       if (e.topW && e.topW > best) best = e.topW
     }
   }))
@@ -164,9 +185,24 @@ export function buildSets(S, cfg) {
   }
   return sets
 }
+// Insert or replace a finished workout keeping history in date order — readers such as
+// lastEntryFor walk it from the end and assume the newest session is last.
+export function putWorkout(workouts, w) {
+  return [...workouts.filter(x => x.id !== w.id), w]
+    .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : (a.start || 0) - (b.start || 0)))
+}
+
+// A back-dated session built from a routine's plan (every set ticked), to be adjusted in the
+// editor before saving. Freestyle when there's no routine.
+export function pastWorkout(S, routine, iso, id) {
+  const start = new Date(iso + 'T12:00:00').getTime()
+  const entries = (routine ? routine.ex : []).map(cfg => ({ id: cfg.id, target: { ...cfg }, topW: null, sets: buildSets(S, cfg).map(s => ({ ...s, done: true })) }))
+  return { id, d: iso, start, end: start + 3600000, routineId: routine ? routine.id : null, name: routine ? routine.name : 'Workout', bw: null, entries, prs: [], manual: true }
+}
+
 export function workoutVolume(w) {
   let v = 0
-  w.entries.forEach(e => e.sets.forEach(s => { if (s.done) v += (s.w || 0) * (s.r || 0) }))
+  w.entries.forEach(e => e.sets.forEach(s => { if (isWork(s)) v += (s.w || 0) * (s.r || 0) }))
   return v
 }
 export function setsDone(w) {

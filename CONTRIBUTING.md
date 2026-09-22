@@ -8,11 +8,26 @@ to keep it that way — easy to read, easy to self-host.
 ```
 frontend/  React + Vite app (src/views, src/components, src/store, src/lib). Builds to static files.
            android/ + ios/ are the Capacitor shells for the standalone mobile app (docs/MOBILE.md).
-api/       backend — server.js (Node, no framework), one dependency (@simplewebauthn/server).
+api/       backend — server.js (Node, no framework) plus small modules: food.js (Open Food Facts
+           proxy), notify.js (reminder rules), coach/ (AI Coach jobs, payload allowlist, validators).
+           Any new top-level api module must also be COPY'd in api/Dockerfile.
 web/       multi-stage Dockerfile (builds frontend → nginx) + nginx.conf (serves app, proxies /api).
 media/     exercise img/gif (gitignored, fetched at runtime).
-docs/      self-hosting guide.
+docs/      self-hosting, AI Coach, NUTRITION, WATER and PHOTOS guides.
 ```
+
+Pure logic in `frontend/src/lib/`, each with a `*.test.js` beside it:
+
+| Module | What it decides |
+| --- | --- |
+| `progression.js`, `onerm.js`, `history.js` | next session's load, 1RM, set types / warm-ups, reading a session back, editing history |
+| `records.js` | all-time records and rep / volume / hold PRs |
+| `plates.js` | plates per side for a barbell total |
+| `starter.js` | starter plan templates, duplicating a routine |
+| `nutrition.js`, `foodDB.js` | calorie & macro targets and maths, fiber/sugar/sodium, food search, favourites/recents |
+| `water.js` | drinks, hydration & caffeine totals, ml/oz, goal suggestion |
+| `measure.js` | body measurements (cm/in, per-day merge) |
+| `export.js` | CSV exports |
 
 ## Running for development
 
@@ -21,15 +36,28 @@ cp .env.example .env
 docker compose up -d --build      # api + web + media on :8080
 # frontend hot reload:
 cd frontend && npm install && npm run dev
-# training logic (progression rules, 1RM, how a session is read back):
+# frontend logic (training, nutrition, water, records…):
 cd frontend && npm test
+# api logic (food proxy, reminders, Coach payload/validation/jobs via the fixture provider):
+cd api && npm install && node --test test/*.test.js
 ```
+
+The AI Coach can be exercised end to end without an AI account: pick the **fixture** provider in
+Admin → AI Coach. It answers training reviews, plan creation and meal plans with canned, valid
+output. Never commit a real provider credential — the Claude setup-token and Codex login are
+entered in the admin dashboard at runtime and stored encrypted under `data/`.
 
 ## Guidelines
 
-- **Keep it dependency-light.** The frontend uses React + Router + Zustand and nothing else;
-  new deps (front or back) are a hard sell. `api/` has two (`@simplewebauthn/server` for passkeys,
-  `web-push` for notifications) — keep it near that.
+- **Keep it dependency-light.** The frontend uses React + Router + Zustand, plus `zxing-wasm` —
+  lazy-loaded only when a browser lacks `BarcodeDetector`; new deps (front or back) are a hard sell.
+  `api/` has `@simplewebauthn/server` (passkeys), `web-push` (notifications) and the Coach's
+  provider runtimes — keep it near that.
+- **Nutrition logic gets a unit test too.** Macro scaling, totals and targets are the numbers
+  people make decisions from; they go in `src/lib` with tests, like training logic.
+- **Additions stay opt-in.** A profile that never turns Nutrition on, or an instance without a
+  `GOOGLE_CLIENT_ID`, must behave like upstream. New state keys go in `DEF` (store) and are read
+  defensively, because saved states are overlaid on `DEF` only one level deep.
 - **Match the style.** Small components, clear names, comments only where the "why" isn't obvious.
   State lives in the Zustand store (`src/store`); pure helpers in `src/lib`.
 - **Don't commit** the exercise media (`media/`) or `data/` — they're gitignored.
@@ -42,11 +70,12 @@ cd frontend && npm test
 
 ## Good first issues
 
-- Additional starter plans (upper/lower, full-body, 5×5…)
+- More starter plans in `src/lib/starter.js` (PPL, upper/lower, full body and 5×5 exist)
+- More foods in the offline catalog (`src/lib/foods.common.js`, `foods.levantine.js`)
 - More languages for the exercise instructions (the dataset ships several)
 - Percentage / training-max programming (5/3/1-style) on top of the progression engine in
   `src/lib/progression.js` — the policy interface is already there
-- Accessibility passes on the workout and chart screens
+- Screen-reader labels for the charts (keyboard and dialog basics are in place)
 
 ## Where to ask what
 

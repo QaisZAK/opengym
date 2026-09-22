@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { EXIDX } from '../lib/exercises.js'
-import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
+import { lastBW, streakWeeks, setLabel, modeOf, effortOf, isWork } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor } from '../sheets.jsx'
+import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor, photosSheet } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import Icon from '../components/Icon.jsx'
@@ -16,7 +16,13 @@ import {
   hasEffort, displayScale, scaleName, toScale, avgRir, effortSummary, effortWeeks,
   effortHistogram, isHardSet, HARD_RIR
 } from '../lib/effort.js'
-import { Button, Segmented, SelectRow } from '../components/ui.jsx'
+import { Button, Segmented, SelectRow, NumberField } from '../components/ui.jsx'
+import { dayTotals } from '../lib/nutrition.js'
+import { recordsOf } from '../lib/records.js'
+import { workoutsCSV, bodyweightCSV, nutritionCSV } from '../lib/export.js'
+import { MOBILE, shareExport } from '../lib/mobile.js'
+import { useUI } from '../store/useUI.js'
+import { SITES, lenUnit, toLen, fromLen, putMeasure } from '../lib/measure.js'
 
 // Which muscles the training in a window actually hit — and, the point of the card,
 // which ones it keeps missing. Shading is relative within the window (lib/muscles.js).
@@ -129,7 +135,139 @@ function EffortCard({ S }) {
   </div>
 }
 
+// Calorie / protein trend, alongside the body-weight chart. Only shown once nutrition is on;
+// each point is one logged day, drawn against the daily target as the goal line.
+function NutritionCard({ S }) {
+  const [range, setRange] = useState(90)
+  const [metric, setMetric] = useState('kcal')
+  const now = Date.now()
+  const log = S.nutrition?.log || {}
+  const tg = S.nutrition?.targets || {}
+  const pts = Object.keys(log)
+    .filter(d => (log[d] || []).length)
+    .map(d => { const tot = dayTotals(log[d]); return { t: new Date(d + 'T12:00:00').getTime(), y: metric === 'kcal' ? tot.kcal : tot.protein, d } })
+    .filter(p => range === 0 || p.t > now - range * 86400000)
+    .sort((a, b) => a.t - b.t)
+  const goal = metric === 'kcal' ? (tg.kcal || null) : (tg.protein || null)
+  return <div className="card">
+    <h2>{t('Nutrition')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {metric === 'kcal' ? t('calories') : t('protein')}</span></h2>
+    <Segmented className="seg-range" value={metric} onChange={setMetric} options={[{ value: 'kcal', label: t('Calories') }, { value: 'protein', label: t('Protein') }]} />
+    <div style={{ height: 8 }} />
+    <Segmented className="seg-range" value={range} onChange={setRange}
+      options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
+    {pts.length ? <div className="chart"><LineChart points={pts} h={160} unit={metric === 'kcal' ? 'kcal' : 'g'} goal={goal} color={metric === 'kcal' ? 'var(--orange)' : 'var(--blue)'} /></div>
+      : <div className="muted small" style={{ marginTop: 10 }}>{t('Log some meals to see your trend.')}</div>}
+  </div>
+}
+
 // Stats = the analytics hub: all charts, progress and history live here.
+// Hand a text/image file to the user: the native build shares it, the web downloads it.
+async function saveFile(blobOrText, name, type) {
+  if (MOBILE && typeof blobOrText === 'string') { try { await shareExport(blobOrText, name) } catch { /* dismissed */ } return }
+  const blob = typeof blobOrText === 'string' ? new Blob([blobOrText], { type }) : blobOrText
+  const file = new File([blob], name, { type })
+  if (navigator.canShare?.({ files: [file] }) && type.startsWith('image/')) { try { await navigator.share({ files: [file] }); return } catch { /* fall back to download */ } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href)
+}
+
+// A 1080×1080 summary card (totals + top lifts) drawn on a canvas, for sharing.
+function summaryImage(S) {
+  const c = document.createElement('canvas'); c.width = c.height = 1080
+  const g = c.getContext('2d'), acc = getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || '#a3e635'
+  g.fillStyle = '#0c0e12'; g.fillRect(0, 0, 1080, 1080)
+  g.fillStyle = acc; g.font = '700 64px system-ui, sans-serif'; g.fillText('openGym', 80, 150)
+  g.fillStyle = '#9ca3af'; g.font = '400 36px system-ui, sans-serif'; g.fillText(fmtDate(todayISO(), true), 80, 205)
+  const stat = (x, y, v, l) => { g.fillStyle = '#fff'; g.font = '700 110px system-ui, sans-serif'; g.fillText(String(v), x, y); g.fillStyle = '#9ca3af'; g.font = '400 34px system-ui, sans-serif'; g.fillText(l, x, y + 50) }
+  stat(80, 400, S.workouts.length, t('workouts'))
+  stat(560, 400, streakWeeks(S), t('week streak'))
+  const top = Object.entries(recordsOf(S.workouts)).filter(([id, r]) => EXIDX[id] && r.weight).sort((a, b) => b[1].weight.v - a[1].weight.v).slice(0, 4)
+  g.fillStyle = acc; g.font = '600 40px system-ui, sans-serif'; g.fillText(t('Top lifts'), 80, 580)
+  top.forEach(([id, r], i) => {
+    const y = 660 + i * 90, nm = EXIDX[id].n
+    g.fillStyle = '#fff'; g.font = '500 40px system-ui, sans-serif'; g.fillText(nm.length > 26 ? nm.slice(0, 25) + '…' : nm, 80, y)
+    g.textAlign = 'right'; g.fillText(`${fmtNum(r.weight.v)} ${S.unit}`, 1000, y); g.textAlign = 'left'
+  })
+  return new Promise(res => c.toBlob(res, 'image/png'))
+}
+
+function ExportSheet({ S }) {
+  const d = todayISO()
+  return <>
+    <h3>{t('Export & share')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('CSV opens in any spreadsheet. The full backup (all data) lives in Settings.')}</div>
+    <div className="list">
+      <div role="button" tabIndex={0} className="item" onClick={() => saveFile(workoutsCSV(S), `opengym-workouts-${d}.csv`, 'text/csv')}><span className="lrow-i"><Icon name="dumbbell" /></span><div className="grow"><div className="tt">{t('Workouts (CSV)')}</div><div className="ss">{t('One row per set')}</div></div><Icon name="download" className="chev" /></div>
+      <div role="button" tabIndex={0} className="item" onClick={() => saveFile(bodyweightCSV(S), `opengym-bodyweight-${d}.csv`, 'text/csv')}><span className="lrow-i"><Icon name="scale" /></span><div className="grow"><div className="tt">{t('Body weight (CSV)')}</div></div><Icon name="download" className="chev" /></div>
+      {S.nutrition?.on && <div role="button" tabIndex={0} className="item" onClick={() => saveFile(nutritionCSV(S), `opengym-nutrition-${d}.csv`, 'text/csv')}><span className="lrow-i"><Icon name="flame" /></span><div className="grow"><div className="tt">{t('Nutrition (CSV)')}</div></div><Icon name="download" className="chev" /></div>}
+      <div role="button" tabIndex={0} className="item" onClick={async () => saveFile(await summaryImage(S), `opengym-summary-${d}.png`, 'image/png')}><span className="lrow-i"><Icon name="trophy" /></span><div className="grow"><div className="tt">{t('Share a summary image')}</div><div className="ss">{t('Workouts, streak and top lifts')}</div></div><Icon name="upload" className="chev" /></div>
+    </div>
+  </>
+}
+
+const SITE_NAME = { waist: 'Waist', chest: 'Chest', hips: 'Hips', arms: 'Arms', thighs: 'Thighs', neck: 'Neck' }
+function MeasureSheet({ close }) {
+  const S = useStore.getState().S, u = lenUnit(S), list = S.measurements || []
+  const last = k => { for (let i = list.length - 1; i >= 0; i--) if (list[i][k] > 0) return list[i][k]; return null }
+  const [v, setV] = useState({})
+  const save = () => {
+    const cm = Object.fromEntries(SITES.filter(k => v[k] > 0).map(k => [k, fromLen(v[k], u)]))
+    if (!Object.keys(cm).length) { useUI.getState().toast(t('Enter at least one measurement')); return }
+    useStore.getState().update(s => { s.measurements = putMeasure(s.measurements, todayISO(), cm) })
+    close(); useUI.getState().toast(t('Measurements saved'))
+  }
+  return <>
+    <h3>{t('Body measurements')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Today, in {0}. Fill in any you measured — blanks are skipped.', u)}</div>
+    <div className="row cfgrow" style={{ flexWrap: 'wrap', rowGap: 12, marginBottom: 16 }}>
+      {SITES.map(k => <div key={k} className="stp-w" style={{ flex: '1 1 30%' }}><span className="stp-l">{t(SITE_NAME[k])}</span>
+        <NumberField value={v[k] ?? null} nullable onChange={x => setV(o => ({ ...o, [k]: x }))} placeholder={last(k) ? fmtNum(toLen(last(k), u)) : '—'} /></div>)}
+    </div>
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+  </>
+}
+
+function MeasurementsCard({ S }) {
+  const u = lenUnit(S), list = S.measurements || []
+  const have = SITES.filter(k => list.some(m => m[k] > 0))
+  const [site, setSite] = useState(null)
+  const cur = have.includes(site) ? site : have[0]
+  const pts = cur ? list.filter(m => m[cur] > 0).map(m => ({ t: m.t || new Date(m.d).getTime(), y: toLen(m[cur], u), d: m.d })) : []
+  return <div className="card">
+    <div className="row between" style={{ marginBottom: 8 }}>
+      <h2 style={{ margin: 0 }}>{t('Measurements')}</h2>
+      <Button size="sm" icon="plus" onClick={() => useUI.getState().openSheet(close => <MeasureSheet close={close} />)}>{t('Log')}</Button>
+    </div>
+    {have.length ? <>
+      {have.length > 1 && <Segmented className="seg-range" value={cur} onChange={setSite} options={have.map(k => ({ value: k, label: t(SITE_NAME[k]) }))} />}
+      <div className="chart"><LineChart points={pts} h={140} unit={u} color="var(--teal)" /></div>
+    </> : <div className="muted small">{t('Track waist, chest, arms and more alongside your weight — tap Log.')}</div>}
+  </div>
+}
+
+// All-time bests per exercise, most recently improved first.
+function RecordsCard({ S }) {
+  const [all, setAll] = useState(false)
+  const recs = Object.entries(recordsOf(S.workouts)).filter(([id, r]) => EXIDX[id] && Object.keys(r).length) // cardio has none
+    .map(([id, r]) => ({ id, r, last: Math.max(...Object.values(r).map(x => +new Date(x.d) || 0)) }))
+    .sort((a, b) => b.last - a.last)
+  if (!recs.length) return null
+  const chip = (label, x, v) => x && <span className="tag nocap" title={fmtDate(x.d, true)}>{label} <b>{v}</b></span>
+  return <div className="card">
+    <h2>{t('Records')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('all-time bests')}</span></h2>
+    {(all ? recs : recs.slice(0, 6)).map(({ id, r }) => <div key={id} style={{ padding: '8px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
+      <div className="capitalize" style={{ fontWeight: 600, marginBottom: 5 }}>{EXIDX[id].n}</div>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {chip(t('Top'), r.weight, `${fmtNum(r.weight?.v)} ${S.unit}`)}
+        {chip(t('1RM≈'), r.e1rm, `${fmtNum(r.e1rm?.v)} ${S.unit}`)}
+        {chip(t('Reps'), r.reps, `${r.reps?.v}${r.reps?.w ? ' @ ' + fmtNum(r.reps.w) : ''}`)}
+        {chip(t('Volume'), r.volume, fmtVol(r.volume?.v, S.unit))}
+        {chip(t('Hold'), r.hold, `${r.hold?.v}s`)}
+      </div>
+    </div>)}
+    {recs.length > 6 && <Button size="sm" variant="ghost" style={{ marginTop: 8 }} onClick={() => setAll(!all)}>{all ? t('Show less') : t('Show all {0}', recs.length)}</Button>}
+  </div>
+}
+
 export default function Stats() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
@@ -167,7 +305,7 @@ export default function Stats() {
   if (curEx) {
     S.workouts.forEach(w => {
       const en = w.entries.find(e => e.id === curEx)
-      if (en) { const mx = Math.max(0, ...en.sets.filter(s => s.done).map(metric), curCardio || curTimed ? 0 : (en.topW || 0)); if (mx > 0) { exPts.push({ t: w.start, y: mx, d: w.d, sets: en.sets.filter(s => s.done), target: en.target }); if (mx > exBest) exBest = mx } }
+      if (en) { const mx = Math.max(0, ...en.sets.filter(isWork).map(metric), curCardio || curTimed ? 0 : (en.topW || 0)); if (mx > 0) { exPts.push({ t: w.start, y: mx, d: w.d, sets: en.sets.filter(isWork), target: en.target }); if (mx > exBest) exBest = mx } }
     })
     exList = exPts.slice(-5).reverse()
   }
@@ -195,8 +333,12 @@ export default function Stats() {
   if (showEff) exOpts.push({ value: 'effort', label: t('Effort') })
 
   return <>
-    <div className="hdr"><div><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
-      <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button></div>
+    <div className="hdr">
+      <button className="iconbtn" onClick={() => nav('/settings')} aria-label={t('Settings')}><Icon name="chevronLeft" /></button>
+      <div style={{ flex: 1, marginLeft: 10 }}><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
+      <button className="iconbtn" onClick={() => useUI.getState().openSheet(() => <ExportSheet S={S} />)} aria-label={t('Export & share')}><Icon name="download" /></button>
+      <button className="iconbtn" style={{ marginLeft: 6 }} onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button>
+    </div>
 
     <div className="tiles">
       <div className="tile"><div className="l"><Icon name="dumbbell" />{t('Workouts')}</div><div className="v">{S.workouts.length}</div></div>
@@ -219,6 +361,7 @@ export default function Stats() {
           <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
           <div className="row" style={{ gap: 8 }}>
             <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
+            {S.google?.connected && <Button size="sm" icon="camera" onClick={photosSheet} aria-label={t('Progress photos')} />}
             <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
           </div>
         </div>
@@ -255,6 +398,10 @@ export default function Stats() {
         </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
       </div>
     </div>
+
+    <MeasurementsCard S={S} />
+    <RecordsCard S={S} />
+    {S.nutrition?.on && <NutritionCard S={S} />}
 
     {S.workouts.length > 0 && <>
       <div className="row between" style={{ marginBottom: 10 }}>

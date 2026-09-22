@@ -1,6 +1,54 @@
 import { describe, it, expect } from 'vitest'
-import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort } from './history.js'
+import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, warmupRamp, bestWeightFor, lastEntryFor, nextSetType, putWorkout, pastWorkout } from './history.js'
 import { EXDB } from './exercises.js'
+import { readSession } from './progression.js'
+import { bestSetOf } from './onerm.js'
+
+describe('past workouts', () => {
+  it('putWorkout keeps history in date order and replaces by id', () => {
+    const a = { id: 'a', d: '2026-01-05', start: 5 }, b = { id: 'b', d: '2026-01-09', start: 9 }
+    const back = { id: 'c', d: '2026-01-07', start: 7 }
+    expect(putWorkout([a, b], back).map(w => w.id)).toEqual(['a', 'c', 'b'])
+    expect(putWorkout([a, b], { ...a, d: '2026-01-10' }).map(w => w.id)).toEqual(['b', 'a'])
+  })
+  it('pastWorkout ticks every planned set on the chosen day', () => {
+    const S = { workouts: [], exWeights: {} }
+    const w = pastWorkout(S, { id: 'r', name: 'Push', ex: [{ id: LIFT, sets: 2, reps: 8, weight: 40 }] }, '2026-02-01', 'x')
+    expect(w).toMatchObject({ id: 'x', d: '2026-02-01', routineId: 'r', name: 'Push' })
+    expect(w.entries[0].sets).toEqual([{ w: 40, r: 8, done: true }, { w: 40, r: 8, done: true }])
+  })
+})
+
+describe('set-type tags', () => {
+  it('cycles normal → W → D → A → F → normal', () => {
+    const seen = []; let t
+    for (let i = 0; i < 5; i++) { t = nextSetType(t); seen.push(t) }
+    expect(seen).toEqual(['warmup', 'drop', 'amrap', 'failure', undefined])
+  })
+  it('prefixes the set label and keeps drop sets out of progression', () => {
+    expect(setLabel(LIFT, { w: 50, r: 8, type: 'drop' })).toBe('D 50×8')
+    const sets = [{ w: 100, r: 5, done: true }, { w: 60, r: 3, type: 'drop', done: true }]
+    expect(readSession({ id: 'x', sets, target: { reps: 5, sets: 1 } }).ok).toBe(true)
+  })
+})
+
+describe('warm-up sets', () => {
+  it('ramps 40/60/80% to the working weight, never below the bar', () => {
+    expect(warmupRamp(100, 20).map(s => [s.w, s.r])).toEqual([[40, 5], [60, 3], [80, 2]])
+    expect(warmupRamp(30, 20).map(s => s.w)).toEqual([20, 25])
+    expect(warmupRamp(0)).toEqual([])
+    expect(warmupRamp(100).every(s => s.type === 'warmup' && !s.done)).toBe(true)
+  })
+  it('never count toward volume, best weight, last-time, progression or 1RM', () => {
+    const sets = [{ w: 200, r: 5, type: 'warmup', done: true }, { w: 100, r: 5, done: true }]
+    const S = { workouts: [{ d: '2026-01-01', entries: [{ id: 'x', sets }] }] }
+    expect(workoutVolume(S.workouts[0])).toBe(500)
+    expect(bestWeightFor(S, 'x')).toBe(100)
+    expect(lastEntryFor(S, 'x').sets).toHaveLength(1)
+    expect(readSession({ id: 'x', sets, target: { reps: 5, sets: 1 } }).weight).toBe(100)
+    expect(bestSetOf({ sets }).w).toBe(100)
+  })
+})
 
 // Real ids out of the shipped catalogue, so the body-part fallback is exercised for real.
 const CARDIO = EXDB.find(e => e.bp === 'cardio').id

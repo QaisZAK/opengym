@@ -4,7 +4,7 @@ import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
 import { ACCENTS } from './lib/format.js'
-import { setLang, useLang } from './lib/i18n.js'
+import { setLang, useLang, t } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
 import { startFlow } from './sheets.jsx'
@@ -27,12 +27,17 @@ import Admin from './views/Admin.jsx'
 import Coach from './views/Coach.jsx'
 import CoachIntake from './views/CoachIntake.jsx'
 import CoachProposal from './views/CoachProposal.jsx'
+import Nutrition from './views/Nutrition.jsx'
+import Water from './views/Water.jsx'
 
 bindUI(useUI)   // lets the shared controls open sheets without importing the store at module scope
 
+// 'system' follows the OS light/dark setting (re-applied on change by the effect in Shell).
+const darkMQ = window.matchMedia?.('(prefers-color-scheme: dark)')
 function applyPrefs(theme, accent) {
   const de = document.documentElement
-  de.dataset.theme = theme === 'light' ? 'light' : 'dark'
+  const light = theme === 'light' || (theme === 'system' && darkMQ && !darkMQ.matches)
+  de.dataset.theme = light ? 'light' : 'dark'
   de.dataset.accent = ACCENTS[accent] ? accent : 'lime'
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.content = de.dataset.theme === 'light' ? '#f2f2f7' : '#000000'
@@ -45,11 +50,26 @@ function Shell() {
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
   useEffect(() => { setNav(navigate) }, [navigate])
-  useEffect(() => { applyPrefs(S.theme, S.accent) }, [S.theme, S.accent])
+  useEffect(() => {
+    applyPrefs(S.theme, S.accent)
+    if (S.theme !== 'system' || !darkMQ) return
+    const on = () => applyPrefs(S.theme, S.accent)
+    darkMQ.addEventListener('change', on)
+    return () => darkMQ.removeEventListener('change', on)
+  }, [S.theme, S.accent])
   useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
   useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
   // every tab/route change starts at the top of the page
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
+  // Keyboard: Enter/Space activate the tappable rows that aren't native buttons (role="button").
+  useEffect(() => {
+    const onKey = e => {
+      const el = e.target
+      if ((e.key === 'Enter' || e.key === ' ') && el?.getAttribute?.('role') === 'button' && el.tagName !== 'BUTTON') { e.preventDefault(); el.click() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
   // bound to the workout, not to the route — checking Stats mid-session keeps the screen on
   useWakeLock(!!S.active && S.keepAwake !== false)
 
@@ -64,9 +84,11 @@ function Shell() {
 
   return (
     <>
+      {/* HashRouter owns the URL hash, so the skip link focuses the content instead of linking to it */}
+      <button className="skip" onClick={() => document.getElementById('app')?.focus()}>{t('Skip to content')}</button>
       {/* keyed on the route: a view that throws is contained, and switching tabs
           re-mounts the boundary, so the tab bar is always a way out */}
-      <div id="app" className="vfade" key={loc.pathname}>
+      <div id="app" className="vfade" key={loc.pathname} tabIndex={-1}>
         <ErrorBoundary>
           {!authed ? <Login /> : (
             <Routes>
@@ -78,6 +100,9 @@ function Shell() {
               <Route path="/history" element={<History />} />
               <Route path="/library" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
+              {/* Self-gates on S.nutrition.on; route exists unconditionally like the Coach routes. */}
+              <Route path="/nutrition" element={<Nutrition />} />
+              <Route path="/water" element={<Water />} />
               {/* The Coach screens gate themselves on the instance config; the routes exist
                   unconditionally so a deep link from a notification lands somewhere sane
                   rather than on the catch-all. */}
