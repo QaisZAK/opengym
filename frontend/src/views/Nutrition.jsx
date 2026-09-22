@@ -7,11 +7,11 @@ import { useUI } from '../store/useUI.js'
 import { fmtNum, fmtDate, todayISO, isoOf, uid } from '../lib/format.js'
 import { lastBW } from '../lib/history.js'
 import { t } from '../lib/i18n.js'
-import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, ACTIVITY } from '../lib/nutrition.js'
-import { localSearch } from '../lib/foodDB.js'
+import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, ACTIVITY } from '../lib/nutrition.js'
+import { localSearch, FOODS } from '../lib/foodDB.js'
 import { offSearch, offBarcode } from '../lib/foodApi.js'
 import Icon from '../components/Icon.jsx'
-import { Section, Row, Button, Segmented, NumberField, Stepper, SelectRow, SearchField } from '../components/ui.jsx'
+import { Section, Row, Button, Segmented, NumberField, Stepper, SelectRow, SearchField, Switch } from '../components/ui.jsx'
 
 /* ---------- module-scope store access (same pattern as sheets.jsx) ---------- */
 const getS = () => useStore.getState().S
@@ -27,6 +27,7 @@ function nz(s) {
   n.profile = n.profile || { sex: null, age: null, heightCm: null, activity: 'moderate', goal: 'maintain' }
   n.targets = n.targets || { kcal: null, protein: null, carbs: null, fat: null, manual: false }
   n.log = n.log || {}; n.foods = n.foods || []; n.meals = n.meals || []; n.recipes = n.recipes || []
+  n.prefs = n.prefs || { avoid: '', halal: false, notes: '' }
   return n
 }
 
@@ -46,6 +47,26 @@ const logMeal = (m, iso, slot) => update(s => {
 })
 // A recipe behaves like a per-serving food when logging (qty = servings), so it reuses Portion.
 const recFood = r => ({ name: r.name, per: 'serving', ...recipePerServing(r), source: 'recipe' })
+const savePrefs = p => update(s => { const n = nz(s); n.prefs = p })
+
+// Suggestion candidates: the user's saved meals, recipes and custom foods (a default portion of
+// each), padded with high-protein catalog staples when they've saved little.
+function candidateList(n) {
+  const out = []
+  ;(n.meals || []).forEach(m => { const mm = mealMacros(m.items); out.push({ name: m.name, kind: 'meal', ref: m, kcal: mm.kcal, protein: mm.protein }) })
+  ;(n.recipes || []).forEach(r => { const ps = recipePerServing(r); out.push({ name: r.name, kind: 'recipe', ref: r, kcal: ps.kcal, protein: ps.protein }) })
+  const foodCand = f => { const unit = f.per === 'serving' ? 'serving' : 'g'; const qty = f.per === 'serving' ? 1 : (f.servingG || 100); const mm = entryMacros(f, qty, unit); return { name: f.name, kind: 'food', ref: f, qty, unit, kcal: mm.kcal, protein: mm.protein } }
+  ;(n.foods || []).forEach(f => out.push(foodCand(f)))
+  if (out.length < 4) for (const f of FOODS) { const c = foodCand(f); if (c.protein >= 15) out.push(c); if (out.length >= 12) break }
+  return out
+}
+const slotForNow = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack' }
+function logCandidate(c, iso, slot) {
+  if (c.kind === 'meal') return logMeal(c.ref, iso, slot)
+  if (c.kind === 'recipe') { const rf = recFood(c.ref); return addEntry(iso, { meal: slot, name: rf.name, qty: 1, unit: 'serving', ...recipePerServing(c.ref), source: 'recipe', base: rf }) }
+  const f = c.ref, mm = entryMacros(f, c.qty, c.unit)
+  addEntry(iso, { meal: slot, name: f.name, qty: c.qty, unit: c.unit, ...mm, source: f.source || 'custom', base: { ...baseOf(f), name: f.name } })
+}
 
 /* ---------- labels & portion helpers ---------- */
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
@@ -499,6 +520,55 @@ const openMeals = () => ui().openSheet(close => <MealsManager close={close} />)
 const openMealBuilder = existing => ui().openSheet(close => <MealBuilder existing={existing} close={close} />)
 const openRecipeBuilder = existing => ui().openSheet(close => <RecipeBuilder existing={existing} close={close} />)
 
+function Prefs({ close }) {
+  const pr = getS().nutrition?.prefs || {}
+  const [avoid, setAvoid] = useState(pr.avoid || '')
+  const [halal, setHalal] = useState(!!pr.halal)
+  const [notes, setNotes] = useState(pr.notes || '')
+  return <>
+    <h3>{t('Food preferences')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Used to filter suggestions (and by the AI Coach later).')}</div>
+    <label className="stp-l">{t('Avoid (comma-separated)')}</label>
+    <input className="field" placeholder={t('e.g. shrimp, mushrooms')} value={avoid} onChange={e => setAvoid(e.target.value)} maxLength={200} />
+    <div className="row between" style={{ padding: '12px 2px', margin: '6px 0' }}>
+      <span className="lrow-t">{t('Halal only')}</span><Switch checked={halal} onChange={setHalal} />
+    </div>
+    <label className="stp-l">{t('Notes (allergies, budget, likes)')}</label>
+    <textarea className="field area" rows={3} value={notes} onChange={e => setNotes(e.target.value)} maxLength={300} />
+    <div style={{ height: 12 }} />
+    <Button variant="primary" onClick={() => { savePrefs({ avoid: avoid.trim(), halal, notes: notes.trim() }); close(); toast(t('Preferences saved')) }}>{t('Save')}</Button>
+  </>
+}
+
+function Suggest({ iso, close }) {
+  const n = getS().nutrition || {}
+  const tg = n.targets || {}
+  const tot = dayTotals((n.log && n.log[iso]) || [])
+  const rem = remaining({ kcal: tg.kcal, protein: tg.protein, carbs: tg.carbs, fat: tg.fat }, tot)
+  const list = suggestFor(rem, candidateList(n), n.prefs || {})
+  const slot = slotForNow()
+  return <>
+    <h3>{t('Suggestions')}</h3>
+    {tg.kcal > 0
+      ? <div className="muted small" style={{ marginBottom: 10 }}>{rem.kcal > 0 ? t('{0} kcal and {1} g protein left today.', fmtNum(rem.kcal), fmtNum(rem.protein)) : t("You're at your calorie target for today.")}</div>
+      : <div className="small" style={{ color: 'var(--yellow)', marginBottom: 10 }}>{t('Set your targets to get suggestions that fit your day.')}</div>}
+    <div className="list">
+      {list.map((c, i) => <div key={i} className="item" onClick={() => { logCandidate(c, iso, slot); close(); toast(t('Added {0} to {1}', c.name, mealLabel(slot))) }}>
+        <span className="lrow-i"><Icon name={c.kind === 'meal' ? 'list' : c.kind === 'recipe' ? 'clipboard' : 'flame'} /></span>
+        <div className="grow"><div className="tt">{c.name}</div><div className="ss">{fmtNum(c.kcal)} kcal · P {fmtNum(c.protein)}{c.fits ? '' : ' · ' + t('over budget')}</div></div>
+        <Icon name="plus" className="chev" />
+      </div>)}
+      {!list.length && <div className="muted small" style={{ padding: 8 }}>{rem.kcal <= 0 && tg.kcal > 0 ? t("You've hit today's calories.") : t('Save a few meals or foods and they’ll show up here.')}</div>}
+    </div>
+    <div className="dim small" style={{ marginTop: 10 }}>{t('Tapping adds it to {0}. AI-generated suggestions arrive when the Coach is connected.', mealLabel(slot))}</div>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" icon="gear" onClick={() => { close(); openPrefs() }}>{t('Food preferences')}</Button>
+  </>
+}
+
+const openSuggest = iso => ui().openSheet(close => <Suggest iso={iso} close={close} />)
+const openPrefs = () => ui().openSheet(close => <Prefs close={close} />)
+
 /* ============================ view ============================ */
 export default function Nutrition() {
   const S = useStore(s => s.S)
@@ -514,6 +584,7 @@ export default function Nutrition() {
     <div className="hdr">
       <div><h1>{t('Nutrition')}</h1><div className="sub">{t('Calories & macros')}</div></div>
       <div className="row" style={{ gap: 6 }}>
+        <button className="iconbtn" onClick={() => openSuggest(iso)} aria-label={t('Suggestions')}><Icon name="lightbulb" /></button>
         <button className="iconbtn" onClick={openMeals} aria-label={t('Saved meals')}><Icon name="clipboard" /></button>
         <button className="iconbtn" onClick={openTargets} aria-label={t('Goals & targets')}><Icon name="target" /></button>
       </div>

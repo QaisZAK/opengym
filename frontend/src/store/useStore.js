@@ -29,6 +29,7 @@ export const DEF = {
     profile: { sex: null, age: null, heightCm: null, activity: 'moderate', goal: 'maintain' },
     targets: { kcal: null, protein: null, carbs: null, fat: null, manual: false },
     log: {}, foods: [], meals: [], recipes: [],
+    prefs: { avoid: '', halal: false, notes: '' },
     water: { goalMl: 2000, log: {}, reminder: { on: false, everyMin: 120, from: '09:00', to: '22:00', tz: null } }
   }
 }

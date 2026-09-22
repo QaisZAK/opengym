@@ -77,3 +77,28 @@ export function remaining(targets, totals) {
     fat: r1((targets.fat || 0) - (totals.fat || 0))
   }
 }
+
+// Names/terms to exclude from suggestions: the free-text avoid list plus halal exclusions.
+export function avoidList(prefs = {}) {
+  const base = String(prefs.avoid || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean)
+  if (prefs.halal) base.push('pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol')
+  return base
+}
+
+// Non-AI meal suggestion: rank candidate foods/meals by how well they fit the calories left,
+// dropping anything the user avoids. Always available; the AI layer (when the Coach is connected)
+// can replace or enrich this. `candidates` each carry at least { name, kcal, protein }.
+export function suggestFor(remain, candidates, prefs = {}) {
+  const kcalLeft = remain?.kcal ?? 0
+  if (kcalLeft <= 0) return []
+  const avoid = avoidList(prefs)
+  const slack = kcalLeft + 100 // a little over is fine
+  return (candidates || [])
+    .filter(c => c && c.kcal > 0 && !avoid.some(a => (c.name || '').toLowerCase().includes(a)))
+    .map(c => ({ ...c, fits: c.kcal <= slack }))
+    .sort((a, b) =>
+      (a.fits === b.fits ? 0 : a.fits ? -1 : 1) ||
+      (b.protein || 0) - (a.protein || 0) ||
+      Math.abs(kcalLeft - a.kcal) - Math.abs(kcalLeft - b.kcal))
+    .slice(0, 6)
+}

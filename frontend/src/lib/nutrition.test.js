@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, ACTIVITY, GOAL } from './nutrition.js'
+import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, avoidList, ACTIVITY, GOAL } from './nutrition.js'
 
 describe('computeTargets (Mifflin-St Jeor)', () => {
   it('matches a hand-computed male maintenance target', () => {
@@ -136,6 +136,35 @@ describe('mealMacros', () => {
   it('is all zeros for an empty or missing meal', () => {
     expect(mealMacros([])).toEqual({ kcal: 0, protein: 0, carbs: 0, fat: 0 })
     expect(mealMacros(undefined)).toEqual({ kcal: 0, protein: 0, carbs: 0, fat: 0 })
+  })
+})
+
+describe('avoidList', () => {
+  it('splits the free-text avoid list and adds halal exclusions', () => {
+    expect(avoidList({ avoid: 'Shrimp, Cilantro' })).toEqual(['shrimp', 'cilantro'])
+    expect(avoidList({ avoid: '', halal: true })).toEqual(['pork', 'bacon', 'ham', 'wine', 'beer', 'alcohol'])
+  })
+})
+
+describe('suggestFor', () => {
+  const A = { name: 'Chicken bowl', kcal: 450, protein: 40 }
+  const B = { name: 'Big pizza', kcal: 900, protein: 30 }
+  const C = { name: 'Peanuts', kcal: 160, protein: 7 }
+  it('ranks items that fit the remaining calories first, then by protein', () => {
+    expect(suggestFor({ kcal: 500 }, [B, C, A]).map(x => x.name)).toEqual(['Chicken bowl', 'Peanuts', 'Big pizza'])
+  })
+  it('marks whether each item fits the remaining budget', () => {
+    const r = suggestFor({ kcal: 500 }, [A, B])
+    expect(r.find(x => x.name === 'Chicken bowl').fits).toBe(true)
+    expect(r.find(x => x.name === 'Big pizza').fits).toBe(false)
+  })
+  it('excludes items matching an avoid term or halal rule', () => {
+    expect(suggestFor({ kcal: 500 }, [A, B], { avoid: 'pizza' }).map(x => x.name)).toEqual(['Chicken bowl'])
+    expect(suggestFor({ kcal: 800 }, [{ name: 'Pork chop', kcal: 300, protein: 25 }, A], { halal: true }).map(x => x.name)).toEqual(['Chicken bowl'])
+  })
+  it('suggests nothing once the day is already at or over target', () => {
+    expect(suggestFor({ kcal: 0 }, [A])).toEqual([])
+    expect(suggestFor({ kcal: -100 }, [A])).toEqual([])
   })
 })
 
