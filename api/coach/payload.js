@@ -56,7 +56,7 @@ const modeOf = (cfg, ex) => {
 function readSession(entry, fallback) {
   const target = (entry && entry.target) || fallback || {};
   const mode = modeOf(target, LIB_BY_ID.get(entry?.id));
-  const sets = (entry && entry.sets) || [];
+  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup');
   const planned = target.sets || sets.length;
   const enough = sets.length >= planned;
   if (mode === 'time') {
@@ -225,6 +225,7 @@ function cleanWorkout(w) {
         if (s.speed != null) o.speed = s.speed;
         if (s.rir != null) o.rir = s.rir;
         if (s.rpe != null) o.rpe = s.rpe;
+        if (s.type) o.type = s.type;   // warmup / drop / amrap / failure
         return o;
       })
     }))
@@ -293,7 +294,7 @@ export function build(S, uid, opts = {}) {
     // start from evidence rather than optimism (B2/FR-20).
     const best = {};
     (S.workouts || []).forEach(w => (w.entries || []).forEach(en => en.sets?.forEach(s => {
-      if (s.done && s.w > 0) best[en.id] = Math.max(best[en.id] || 0, s.w);
+      if (s.done && s.type !== 'warmup' && s.w > 0) best[en.id] = Math.max(best[en.id] || 0, s.w);
     })));
     if (Object.keys(best).length) {
       p.history = {

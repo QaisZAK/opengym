@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { EXIDX } from '../lib/exercises.js'
-import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
+import { lastBW, streakWeeks, setLabel, modeOf, effortOf, isWork } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor } from '../sheets.jsx'
@@ -193,7 +193,7 @@ export default function Stats() {
   if (curEx) {
     S.workouts.forEach(w => {
       const en = w.entries.find(e => e.id === curEx)
-      if (en) { const mx = Math.max(0, ...en.sets.filter(s => s.done).map(metric), curCardio || curTimed ? 0 : (en.topW || 0)); if (mx > 0) { exPts.push({ t: w.start, y: mx, d: w.d, sets: en.sets.filter(s => s.done), target: en.target }); if (mx > exBest) exBest = mx } }
+      if (en) { const mx = Math.max(0, ...en.sets.filter(isWork).map(metric), curCardio || curTimed ? 0 : (en.topW || 0)); if (mx > 0) { exPts.push({ t: w.start, y: mx, d: w.d, sets: en.sets.filter(isWork), target: en.target }); if (mx > exBest) exBest = mx } }
     })
     exList = exPts.slice(-5).reverse()
   }

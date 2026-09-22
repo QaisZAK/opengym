@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort } from './history.js'
+import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, warmupRamp, bestWeightFor, lastEntryFor } from './history.js'
 import { EXDB } from './exercises.js'
+import { readSession } from './progression.js'
+import { bestSetOf } from './onerm.js'
+
+describe('warm-up sets', () => {
+  it('ramps 40/60/80% to the working weight, never below the bar', () => {
+    expect(warmupRamp(100, 20).map(s => [s.w, s.r])).toEqual([[40, 5], [60, 3], [80, 2]])
+    expect(warmupRamp(30, 20).map(s => s.w)).toEqual([20, 25])
+    expect(warmupRamp(0)).toEqual([])
+    expect(warmupRamp(100).every(s => s.type === 'warmup' && !s.done)).toBe(true)
+  })
+  it('never count toward volume, best weight, last-time, progression or 1RM', () => {
+    const sets = [{ w: 200, r: 5, type: 'warmup', done: true }, { w: 100, r: 5, done: true }]
+    const S = { workouts: [{ d: '2026-01-01', entries: [{ id: 'x', sets }] }] }
+    expect(workoutVolume(S.workouts[0])).toBe(500)
+    expect(bestWeightFor(S, 'x')).toBe(100)
+    expect(lastEntryFor(S, 'x').sets).toHaveLength(1)
+    expect(readSession({ id: 'x', sets, target: { reps: 5, sets: 1 } }).weight).toBe(100)
+    expect(bestSetOf({ sets }).w).toBe(100)
+  })
+})
 
 // Real ids out of the shipped catalogue, so the body-part fallback is exercised for real.
 const CARDIO = EXDB.find(e => e.bp === 'cardio').id

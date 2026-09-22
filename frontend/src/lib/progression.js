@@ -98,7 +98,7 @@ function deloadTo(cur, step) {
 export function readSession(entry, fallback) {
   const target = (entry && entry.target) || fallback || {}
   const mode = modeOf({ ...target, id: entry && entry.id })
-  const sets = (entry && entry.sets) || []
+  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup')
   const planned = target.sets || sets.length
   const enough = sets.length >= planned
 
@@ -232,7 +232,7 @@ export function nextPrescription(S, cfg, routine) {
 export function applyPrescription(sets, p) {
   if (!p || p.kind === 'off' || p.kind === 'first') return sets
   return sets.map(s => {
-    if (s.done) return s
+    if (s.done || s.type === 'warmup') return s
     const out = { ...s }
     if (p.weight != null) out.w = p.weight
     if (p.reps != null) out.r = p.reps
