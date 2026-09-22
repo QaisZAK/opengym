@@ -21,6 +21,7 @@ import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC } from './lib/progression.js'
 import { MOBILE, shareExport } from './lib/mobile.js'
 import { driveConfigured, ensureFolder, uploadPhoto, photoUrl, resizeImage } from './lib/gdrive.js'
+import { platesPerSide, PLATES, BAR } from './lib/plates.js'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -883,6 +884,29 @@ function TopWeight({ entryIdx, close }) {
   </>
 }
 export const topWeightSheet = entryIdx => ui().openSheet(close => <TopWeight entryIdx={entryIdx} close={close} />)
+
+// Plates per side for a barbell total. Bar weight is remembered per profile (S.barW).
+function PlateCalc({ weight }) {
+  const st = useStore(s => s.S)
+  const u = st.unit === 'lb' ? 'lb' : 'kg'
+  const [total, setTotal] = useState(weight || BAR[u] * 3)
+  const bar = st.barW ?? BAR[u]
+  const { plates, rest } = platesPerSide(total, bar, PLATES[u])
+  return <>
+    <h3>{t('Plate calculator')}</h3>
+    <div className="row cfgrow" style={{ marginBottom: 10 }}>
+      <Stepper label={t('Total ({0})', u)} value={total} step={u === 'lb' ? 5 : 2.5} decimal onChange={setTotal} />
+      <Stepper label={t('Bar ({0})', u)} value={bar} step={u === 'lb' ? 5 : 2.5} decimal onChange={v => update(s => { s.barW = Math.max(0, v || 0) })} />
+    </div>
+    <h4 className="sec">{t('Each side')}</h4>
+    <div className="row" style={{ gap: 6, flexWrap: 'wrap', minHeight: 40 }}>
+      {plates.length ? plates.map((p, i) => <span key={i} className="tag acc" style={{ fontSize: 15, padding: '6px 10px' }}>{fmtNum(p)}</span>)
+        : <span className="muted small">{total > bar ? '' : t('Just the bar.')}</span>}
+    </div>
+    {rest > 0 && <div className="small" style={{ color: 'var(--yellow)', marginTop: 8 }}>{t('{0} {1} per side can’t be made with standard plates.', fmtNum(rest), u)}</div>}
+  </>
+}
+export const plateCalcSheet = weight => ui().openSheet(close => <PlateCalc weight={weight} close={close} />)
 
 // Shown when the last exercise's last set is checked — finish, or keep going.
 function WorkoutComplete({ close }) {
