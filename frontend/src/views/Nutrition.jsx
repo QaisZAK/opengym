@@ -1,7 +1,7 @@
 // Nutrition tab — daily calorie & macro log. Gated on S.nutrition.on (Settings); the route and
 // this view render nothing meaningful until it's turned on. All persistence rides the normal
 // store: mutations go through update(), so entries sync and back up like everything else.
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { fmtNum, fmtDate, todayISO, isoOf, uid } from '../lib/format.js'
@@ -9,7 +9,7 @@ import { lastBW } from '../lib/history.js'
 import { t } from '../lib/i18n.js'
 import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, ACTIVITY } from '../lib/nutrition.js'
 import { localSearch } from '../lib/foodDB.js'
-import { offSearch } from '../lib/foodApi.js'
+import { offSearch, offBarcode } from '../lib/foodApi.js'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, Button, Segmented, NumberField, Stepper, SelectRow, SearchField } from '../components/ui.jsx'
 
@@ -122,6 +122,71 @@ function FoodRow({ food, onClick }) {
   )
 }
 
+// Barcode/QR scanner. Native BarcodeDetector where present (Android Chrome); zxing-wasm is
+// lazy-loaded as the iOS-Safari fallback — the wasm is fetched only here, never in the main
+// bundle. Manual entry always works, and the camera is released on unmount.
+function Scanner({ onCode, close }) {
+  const videoRef = useRef(null)
+  const [err, setErr] = useState('')
+  const [manual, setManual] = useState('')
+  useEffect(() => {
+    let stream, raf, stop = false, last = 0
+    const FMT = ['ean_13', 'upc_a', 'ean_8', 'upc_e', 'qr_code']
+    const cleanup = () => { stop = true; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(tr => tr.stop()) }
+    const hit = code => { if (stop) return; cleanup(); onCode(String(code)) }
+    async function start() {
+      if (!navigator.mediaDevices?.getUserMedia) { setErr(t('Camera not available — enter the code below.')); return }
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); videoRef.current.srcObject = stream; await videoRef.current.play() }
+      catch { setErr(t('Camera blocked — allow access or enter the code below.')); return }
+      if ('BarcodeDetector' in window) {
+        const det = new window.BarcodeDetector({ formats: FMT })
+        const tick = async () => {
+          if (stop) return
+          try { const r = await det.detect(videoRef.current); if (r && r.length) return hit(r[0].rawValue) } catch { /* frame not ready */ }
+          raf = requestAnimationFrame(tick)
+        }
+        tick()
+      } else {
+        let zx
+        try { zx = await import('zxing-wasm/reader') } catch { setErr(t('Scanner unavailable — enter the code below.')); return }
+        const cv = document.createElement('canvas')
+        const tick = async () => {
+          if (stop) return
+          const v = videoRef.current, now = Date.now()
+          if (v && v.videoWidth && now - last > 250) { // throttle the wasm decode
+            last = now; cv.width = v.videoWidth; cv.height = v.videoHeight
+            cv.getContext('2d').drawImage(v, 0, 0)
+            try {
+              const res = await zx.readBarcodes(cv.getContext('2d').getImageData(0, 0, cv.width, cv.height), { formats: ['EAN-13', 'UPC-A', 'EAN-8', 'UPC-E', 'QRCode'], tryHarder: true })
+              if (res && res[0]?.text) return hit(res[0].text)
+            } catch { /* keep trying */ }
+          }
+          raf = requestAnimationFrame(tick)
+        }
+        tick()
+      }
+    }
+    start()
+    return cleanup
+  }, [])
+  const lookUp = () => { const c = manual.trim(); if (c) onCode(c) }
+  return <>
+    <h3>{t('Scan barcode')}</h3>
+    {err
+      ? <div className="small" style={{ color: 'var(--yellow)', margin: '4px 0 12px' }}>{err}</div>
+      : <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', background: '#000', aspectRatio: '4 / 3', marginBottom: 12 }}>
+        <video ref={videoRef} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div style={{ position: 'absolute', inset: '24% 12%', border: '2px solid var(--acc)', borderRadius: 10 }} />
+      </div>}
+    <div className="muted small" style={{ marginBottom: 8 }}>{t('Point the camera at an EAN/UPC barcode or QR code, or type the number.')}</div>
+    <div className="row" style={{ gap: 8 }}>
+      <input className="field" inputMode="numeric" placeholder={t('Barcode number')} value={manual}
+        onChange={e => setManual(e.target.value.replace(/[^0-9]/g, ''))} onKeyDown={e => e.key === 'Enter' && lookUp()} style={{ flex: 1 }} />
+      <Button variant="primary" onClick={lookUp}>{t('Look up')}</Button>
+    </div>
+  </>
+}
+
 function MealRow({ m, onClick }) {
   const tot = mealMacros(m.items)
   return <div className="item" onClick={onClick}>
@@ -158,7 +223,8 @@ function LogSheet({ meal, iso, onPick, close }) {
   }, [q])
   return <>
     <h3>{onPick ? t('Add food') : t('Add to {0}', mealLabel(meal))}</h3>
-    {!onPick && <div className="row" style={{ gap: 8, margin: '4px 0 10px' }}>
+    {!onPick && <div className="row" style={{ gap: 8, margin: '4px 0 10px', flexWrap: 'wrap' }}>
+      <Button size="sm" icon="barcode" onClick={() => openScan(meal, iso)}>{t('Scan')}</Button>
       <Button size="sm" icon="plus" onClick={() => openQuickAdd(meal, iso)}>{t('Quick add')}</Button>
       <Button size="sm" icon="pencil" onClick={() => openCustomFood(meal, iso)}>{t('New food')}</Button>
     </div>}
@@ -236,20 +302,21 @@ function QuickAdd({ meal, iso, close }) {
   </>
 }
 
-function CustomFood({ meal, iso, close }) {
+function CustomFood({ meal, iso, code, close }) {
   const [name, setName] = useState('')
   const [per, setPer] = useState('100g')
   const [kcal, setKcal] = useState(null); const [p, setP] = useState(null); const [c, setC] = useState(null); const [f, setF] = useState(null)
   const build = () => {
     if (!name.trim()) { toast(t('Give it a name')); return null }
     if (!(kcal > 0)) { toast(t('Enter calories')); return null }
-    const food = { id: 'f' + uid(), name: name.trim(), per, kcal: Math.round(kcal), protein: numN(p) || 0, carbs: numN(c) || 0, fat: numN(f) || 0, source: 'custom' }
+    const food = { id: 'f' + uid(), name: name.trim(), per, kcal: Math.round(kcal), protein: numN(p) || 0, carbs: numN(c) || 0, fat: numN(f) || 0, source: 'custom', ...(code ? { barcode: code } : {}) }
     upsertFood(food)
     return food
   }
   return <>
     <h3>{t('New food')}</h3>
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Saved to your foods so you can log it again.')}</div>
+    {code && <div className="muted small" style={{ marginBottom: 12 }}>{t('Barcode: {0}', code)}</div>}
     <input className="field" placeholder={t('Name')} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
     <div style={{ margin: '12px 0' }}>
       <Segmented options={[{ value: '100g', label: t('per 100 g/ml') }, { value: 'serving', label: t('per serving') }]} value={per} onChange={setPer} />
@@ -342,7 +409,18 @@ export const openTargets = () => ui().openSheet(close => <Targets close={close} 
 const openLog = (meal, iso) => ui().openSheet(close => <LogSheet meal={meal} iso={iso} close={close} />)
 const openPortion = (food, meal, iso, opts = {}) => ui().openSheet(close => <Portion food={food} meal={meal} iso={iso} editId={opts.editId} initQty={opts.initQty} initUnit={opts.initUnit} onAdd={opts.onAdd} close={close} />)
 const openQuickAdd = (meal, iso) => ui().openSheet(close => <QuickAdd meal={meal} iso={iso} close={close} />)
-const openCustomFood = (meal, iso) => ui().openSheet(close => <CustomFood meal={meal} iso={iso} close={close} />)
+const openCustomFood = (meal, iso, code) => ui().openSheet(close => <CustomFood meal={meal} iso={iso} code={code} close={close} />)
+
+// A scanned/typed code: match the user's own barcoded foods offline first, then Open Food Facts;
+// if nothing is found, offer to create the food with the code prefilled.
+async function handleCode(code, meal, iso) {
+  const foods = getS().nutrition?.foods || []
+  const own = foods.find(f => f.barcode === code)
+  if (own) { openPortion(own, meal, iso); return }
+  try { const food = await offBarcode(code); openPortion({ ...food, barcode: code }, meal, iso) }
+  catch { toast(t('Barcode not found — add it as a food')); openCustomFood(meal, iso, code) }
+}
+const openScan = (meal, iso) => ui().openSheet(close => <Scanner onCode={code => { close(); handleCode(code, meal, iso) }} close={close} />)
 
 function ItemList({ items, setItems }) {
   return <div className="list" style={{ margin: '12px 0' }}>
