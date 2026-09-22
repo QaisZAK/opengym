@@ -20,6 +20,7 @@ import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-sha
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC } from './lib/progression.js'
 import { MOBILE, shareExport } from './lib/mobile.js'
+import { driveConfigured, ensureFolder, uploadPhoto, photoUrl, resizeImage } from './lib/gdrive.js'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -84,18 +85,57 @@ function WeightInput({ value, setValue, unit }) {
 }
 
 /* ============================ body weight ============================ */
+// Progress-photo viewer: fetches the image from the user's Drive with the in-memory token.
+function PhotoView({ clientId, fileId }) {
+  const [url, setUrl] = useState(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let u
+    photoUrl(clientId, fileId).then(x => { u = x; setUrl(x) }).catch(e => setErr(e.message || 'could not load'))
+    return () => { if (u) URL.revokeObjectURL(u) }
+  }, [clientId, fileId])
+  return <>
+    <h3>{t('Progress photo')}</h3>
+    {err ? <div className="small" style={{ color: 'var(--yellow)' }}>{t('Could not load photo: {0}', err)}</div>
+      : url ? <img src={url} alt="" style={{ width: '100%', borderRadius: 12, display: 'block' }} />
+        : <div className="muted small" style={{ padding: 24, textAlign: 'center' }}>{t('Loading…')}</div>}
+  </>
+}
+const openPhoto = (clientId, fileId) => ui().openSheet(close => <PhotoView clientId={clientId} fileId={fileId} />)
+
 function BwSheet({ required, onDone, close }) {
   const st = useStore(s => s.S)
+  const config = useStore(s => s.config)
   const unit = st.unit
   const bw = lastBW(st)
   const [v, setV] = useState(bw ? bw.w : 70)
-  const save = () => {
+  const [photo, setPhoto] = useState(null)   // a picked File, uploaded on Save
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+  const driveOn = driveConfigured(config) && st.google?.connected
+  const clientId = config?.google?.clientId
+
+  const save = async () => {
     const n = Math.round((v || 0) * 10) / 10
     if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
+    let photoId = null
+    if (photo && driveOn) {
+      setBusy(true)
+      try {
+        const blob = await resizeImage(photo)
+        const folderId = await ensureFolder(clientId, st.google.folderId)
+        photoId = await uploadPhoto(clientId, folderId, blob, 'progress-' + todayISO() + '.jpg')
+        if (folderId && folderId !== st.google.folderId) update(s => { s.google = { ...(s.google || {}), folderId } })
+      } catch (e) { setBusy(false); toast(t('Photo upload failed: {0}', e.message)); return }
+      setBusy(false)
+    }
     update(s => {
       const iso = todayISO()
       const ex = s.bodyweight.find(b => b.d === iso)
-      if (ex) { ex.w = n; ex.t = Date.now() } else s.bodyweight.push({ d: iso, w: n, t: Date.now() })
+      const rec = ex || { d: iso }
+      rec.w = n; rec.t = Date.now()
+      if (photoId) rec.photo = photoId
+      if (!ex) s.bodyweight.push(rec)
       s.bodyweight.sort((a, b) => (a.d < b.d ? -1 : 1))
     })
     close()
@@ -107,8 +147,14 @@ function BwSheet({ required, onDone, close }) {
     <h3>{required ? t('Quick check-in') : t('Log body weight')}</h3>
     <div className="muted small">{required ? t('Slide or tap to set your weight — tracked before every workout so your curve stays honest.') : t('Today') + ', ' + fmtDate(todayISO(), true)}</div>
     <WeightInput value={v} setValue={setV} unit={unit} />
+    {driveOn && <>
+      <div style={{ height: 12 }} />
+      <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) setPhoto(f) }} />
+      <Button icon="camera" onClick={() => fileRef.current?.click()}>{photo ? t('Progress photo attached — change') : t('Add progress photo')}</Button>
+      {photo && <div className="dim small" style={{ marginTop: 6, textAlign: 'center' }}>{t('Uploads to your Google Drive when you save.')}</div>}
+    </>}
     <div style={{ height: 14 }} />
-    <Button variant="primary" onClick={save}>{required ? t('Save & start workout') : t('Save')}</Button>
+    <Button variant="primary" onClick={save} disabled={busy}>{busy ? t('Uploading…') : (required ? t('Save & start workout') : t('Save'))}</Button>
     {required && <>
       <div style={{ height: 8 }} /><Button variant="ghost" className="dim" onClick={() => { close(); onDone && onDone(null) }}>{t('Start without weighing in')}</Button>
       <div style={{ height: 2 }} /><Button variant="ghost" className="dim" icon="reset" onClick={() => { close(); nav('/workout') }}>{t('Choose a different workout')}</Button>
@@ -119,6 +165,7 @@ function BwSheet({ required, onDone, close }) {
         {recent.map(b => <div key={b.d} className="row between" style={{ padding: '9px 2px', borderBottom: '1px solid var(--sep)' }}>
           <span className="small muted">{fmtDate(b.d, true)}</span>
           <span className="row" style={{ gap: 12 }}><b>{fmtNum(b.w)} {unit}</b>
+            {driveConfigured(config) && b.photo && <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, fontSize: 15 }} onClick={() => openPhoto(clientId, b.photo)} aria-label={t('Progress photo')}><Icon name="camera" /></button>}
             <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, fontSize: 15, color: 'var(--red)' }} onClick={() => delEntry(b.d)} aria-label="delete"><Icon name="trash" /></button></span>
         </div>)}
       </div>

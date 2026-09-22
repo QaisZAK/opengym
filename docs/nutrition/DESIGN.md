@@ -127,6 +127,33 @@ Two items still need your input / on-device testing:
 - **AI meal suggestions** need the Coach connected with a provider + credential (the open §4 decision). The non-AI engine ships now and always works; the AI layer plugs in via the Coach pipeline afterwards.
 - **Barcode camera** and **water push reminders** can only be verified on a real device over HTTPS (local Docker / staging).
 
+## Google Drive progress photos
+
+Optional. When logging body weight, the user can attach a progress photo that's uploaded to **their
+own Google Drive** — never to the openGym server. Client-side only (Google Identity Services token
+flow, `drive.file` scope = the app only sees files it creates). The access token lives in memory and
+is never persisted or sent to the server; app state stores only the Drive file id on the weigh-in
+(`bodyweight[].photo`) and the app folder id (`S.google.folderId`).
+
+Gated on the instance providing an OAuth client id (like the AI credential). Absent ⇒ hidden.
+
+**One-time setup (owner, in Google Cloud Console):**
+1. Create/choose a project, enable the **Google Drive API**.
+2. Configure the **OAuth consent screen** (External; add yourself/testers or publish), scope
+   `.../auth/drive.file`.
+3. Create an **OAuth client ID** of type **Web application**. Authorized JavaScript origins:
+   `https://dalleh.store`, `https://staging.dalleh.store`, and for dev `http://localhost:5173`.
+   (No redirect URI needed — the token flow uses the origins.)
+4. Set `GOOGLE_CLIENT_ID=<the client id>` in the server `.env` and restart. The client id is public
+   (no secret in this flow); it's exposed via `GET /api/config` as `google.clientId`.
+
+Then Settings shows "Connect Google Drive", and weigh-ins offer "Add progress photo". Photos land in
+an "openGym Progress" folder in the user's Drive. **Unverified in this environment** (needs a real
+client id + Google account) — test on staging after step 4.
+
+Files: `frontend/src/lib/gdrive.js` (all Google/Drive calls), Settings connect/disconnect, the photo
+attach/view in `sheets.jsx` `BwSheet`. `DEF.google` holds connection metadata only.
+
 ## Deploy / ops notes
 
 - **Don't touch** `RP_ID` / `ORIGIN` (invalidates passkeys) or `data/`.

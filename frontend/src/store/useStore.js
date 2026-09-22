@@ -20,6 +20,9 @@ export const DEF = {
   // same app it was before the feature existed, which is what Epic F asks for. Shape and
   // bounds live in lib/coach.js.
   coach: null,
+  // Google Drive connection for progress photos: null until connected, then { connected, folderId }.
+  // Metadata only — the OAuth access token lives in memory (lib/gdrive.js), never in synced state.
+  google: null,
   // Nutrition (calorie & macro tracking). Off by default per profile — nutrition.on gates the tab
   // and screens, so a profile that never turns it on is byte-for-byte the app it was before. The
   // store overlay is shallow (top-level only), so helpers read sub-fields defensively: an older

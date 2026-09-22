@@ -13,6 +13,7 @@ import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
 import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
 import { coachAvailable, hasConsent } from '../lib/coach.js'
 import { openTargets } from './Nutrition.jsx'
+import { driveConfigured, connectDrive, disconnectDrive } from '../lib/gdrive.js'
 import { forgetCoach } from '../lib/coach-api.js'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
@@ -68,6 +69,16 @@ export default function Settings() {
       try { await signOutAll(); nav('/home'); toast(t('Signed out on all devices')) }
       catch (e) { toast(t('Could not sign out everywhere — you are still signed in.')) }
     },
+  })
+
+  const connectGoogle = async () => {
+    try { await connectDrive(config.google.clientId); update(s => { s.google = { ...(s.google || {}), connected: true } }); toast(t('Google Drive connected')) }
+    catch (e) { if (!/popup|closed|cancel/i.test(e.message || '')) toast(t('Could not connect: {0}', e.message)) }
+  }
+  const disconnectGoogle = () => confirmSheet({
+    title: t('Disconnect Google Drive?'), message: t('New weigh-ins won’t attach photos. Photos already in your Drive are left untouched.'),
+    confirmText: t('Disconnect'), danger: true,
+    onConfirm: () => { disconnectDrive(); update(s => { s.google = null }); toast(t('Google Drive disconnected')) }
   })
 
   return <div className="narrow">
@@ -172,6 +183,18 @@ export default function Settings() {
         <Row icon="chart" iconTint="var(--acc)" title={t('Open nutrition')} accessory="chevron" onClick={() => nav('/nutrition')} />
       </>}
     </Section>
+
+    {/* ---------- Google Drive (progress photos) — only when the instance has a client id ---------- */}
+    {driveConfigured(config) && <Section title={t('Progress photos')} footer={S.google?.connected
+      ? t('Photos you attach when logging weight are stored in your Google Drive — never on this server.')
+      : t('Connect Google Drive to attach progress photos to your weigh-ins. They live in your Drive, not on the server.')}>
+      {S.google?.connected ? <>
+        <Row icon="folder" iconTint="var(--acc)" title={t('Google Drive connected')} subtitle={t('Progress photos go to your Drive')} />
+        <Row icon="signOut" iconTint="var(--red)" title={t('Disconnect')} danger onClick={disconnectGoogle} />
+      </> : (
+        <Row icon="folder" iconTint="var(--blue)" title={t('Connect Google Drive')} subtitle={t('For progress photos')} accessory="chevron" onClick={connectGoogle} />
+      )}
+    </Section>}
 
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 

@@ -30,6 +30,9 @@ const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
 // baked into each cookie when it's issued, so lowering this never cuts an existing session short.
 const SESSION_DAYS = Math.max(1, +(process.env.SESSION_DAYS || 90) || 90);
 const MAX_BODY = 5 * 1024 * 1024;
+// Public OAuth client id for the client-side Google Drive integration (progress photos). Safe to
+// expose; there is no client secret in this flow. Absent ⇒ the whole Drive feature stays hidden.
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
 // Secure cookies require HTTPS; over plain http://localhost the flag would drop the cookie
 const SECURE = /^https:/i.test(ORIGIN) ? ' Secure;' : '';
 
@@ -298,7 +301,7 @@ const routes = {
   // the app it was before the feature existed.
   'GET /api/config': async (req, res) => {
     const coach = coachConfig.publicConfig();
-    json(res, 200, { invite_only: INVITE_ONLY, ...(coach ? { coach } : {}) });
+    json(res, 200, { invite_only: INVITE_ONLY, ...(coach ? { coach } : {}), ...(GOOGLE_CLIENT_ID ? { google: { clientId: GOOGLE_CLIENT_ID } } : {}) });
   },
 
   'GET /api/me': async (req, res) => {
