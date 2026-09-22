@@ -16,12 +16,13 @@ import {
   hasEffort, displayScale, scaleName, toScale, avgRir, effortSummary, effortWeeks,
   effortHistogram, isHardSet, HARD_RIR
 } from '../lib/effort.js'
-import { Button, Segmented, SelectRow } from '../components/ui.jsx'
+import { Button, Segmented, SelectRow, NumberField } from '../components/ui.jsx'
 import { dayTotals } from '../lib/nutrition.js'
 import { recordsOf } from '../lib/records.js'
 import { workoutsCSV, bodyweightCSV, nutritionCSV } from '../lib/export.js'
 import { MOBILE, shareExport } from '../lib/mobile.js'
 import { useUI } from '../store/useUI.js'
+import { SITES, lenUnit, toLen, fromLen, putMeasure } from '../lib/measure.js'
 
 // Which muscles the training in a window actually hit — and, the point of the card,
 // which ones it keeps missing. Shading is relative within the window (lib/muscles.js).
@@ -203,6 +204,46 @@ function ExportSheet({ S }) {
   </>
 }
 
+const SITE_NAME = { waist: 'Waist', chest: 'Chest', hips: 'Hips', arms: 'Arms', thighs: 'Thighs', neck: 'Neck' }
+function MeasureSheet({ close }) {
+  const S = useStore.getState().S, u = lenUnit(S), list = S.measurements || []
+  const last = k => { for (let i = list.length - 1; i >= 0; i--) if (list[i][k] > 0) return list[i][k]; return null }
+  const [v, setV] = useState({})
+  const save = () => {
+    const cm = Object.fromEntries(SITES.filter(k => v[k] > 0).map(k => [k, fromLen(v[k], u)]))
+    if (!Object.keys(cm).length) { useUI.getState().toast(t('Enter at least one measurement')); return }
+    useStore.getState().update(s => { s.measurements = putMeasure(s.measurements, todayISO(), cm) })
+    close(); useUI.getState().toast(t('Measurements saved'))
+  }
+  return <>
+    <h3>{t('Body measurements')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Today, in {0}. Fill in any you measured — blanks are skipped.', u)}</div>
+    <div className="row cfgrow" style={{ flexWrap: 'wrap', rowGap: 12, marginBottom: 16 }}>
+      {SITES.map(k => <div key={k} className="stp-w" style={{ flex: '1 1 30%' }}><span className="stp-l">{t(SITE_NAME[k])}</span>
+        <NumberField value={v[k] ?? null} nullable onChange={x => setV(o => ({ ...o, [k]: x }))} placeholder={last(k) ? fmtNum(toLen(last(k), u)) : '—'} /></div>)}
+    </div>
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+  </>
+}
+
+function MeasurementsCard({ S }) {
+  const u = lenUnit(S), list = S.measurements || []
+  const have = SITES.filter(k => list.some(m => m[k] > 0))
+  const [site, setSite] = useState(null)
+  const cur = have.includes(site) ? site : have[0]
+  const pts = cur ? list.filter(m => m[cur] > 0).map(m => ({ t: m.t || new Date(m.d).getTime(), y: toLen(m[cur], u), d: m.d })) : []
+  return <div className="card">
+    <div className="row between" style={{ marginBottom: 8 }}>
+      <h2 style={{ margin: 0 }}>{t('Measurements')}</h2>
+      <Button size="sm" icon="plus" onClick={() => useUI.getState().openSheet(close => <MeasureSheet close={close} />)}>{t('Log')}</Button>
+    </div>
+    {have.length ? <>
+      {have.length > 1 && <Segmented className="seg-range" value={cur} onChange={setSite} options={have.map(k => ({ value: k, label: t(SITE_NAME[k]) }))} />}
+      <div className="chart"><LineChart points={pts} h={140} unit={u} color="var(--teal)" /></div>
+    </> : <div className="muted small">{t('Track waist, chest, arms and more alongside your weight — tap Log.')}</div>}
+  </div>
+}
+
 // All-time bests per exercise, most recently improved first.
 function RecordsCard({ S }) {
   const [all, setAll] = useState(false)
@@ -357,6 +398,7 @@ export default function Stats() {
       </div>
     </div>
 
+    <MeasurementsCard S={S} />
     <RecordsCard S={S} />
     {S.nutrition?.on && <NutritionCard S={S} />}
 

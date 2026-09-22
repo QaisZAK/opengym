@@ -23,6 +23,8 @@ export const DEF = {
   // Google Drive connection for progress photos: null until connected, then { connected, folderId }.
   // Metadata only — the OAuth access token lives in memory (lib/gdrive.js), never in synced state.
   google: null,
+  // Body measurements: [{ d, t, waist, chest, … }] in cm (lib/measure.js), one entry per day.
+  measurements: [],
   // Nutrition (calorie & macro tracking). Off by default per profile — nutrition.on gates the tab
   // and screens, so a profile that never turns it on is byte-for-byte the app it was before. The
   // store overlay is shallow (top-level only), so helpers read sub-fields defensively: an older
