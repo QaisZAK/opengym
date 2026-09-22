@@ -86,9 +86,10 @@ function logCandidate(c, iso, slot) {
 /* ---------- labels & portion helpers ---------- */
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
 const mealLabel = m => t({ breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snacks' }[m] || m)
-const unitLabel = (u, q) => (u === 'serving' ? t(q === 1 ? 'serving' : 'servings') : u)
-const portionLabel = e => fmtNum(e.qty) + ' ' + unitLabel(e.unit, e.qty)
-const baseOf = f => ({ per: f.per, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, ...(f.servingG > 0 ? { servingG: f.servingG } : {}),
+// A food's serving can be named ("cup", "slice") — a household unit bridged to grams by servingG.
+const unitLabel = (u, q, name) => (u === 'serving' ? name || t(q === 1 ? 'serving' : 'servings') : u)
+const portionLabel = e => fmtNum(e.qty) + ' ' + unitLabel(e.unit, e.qty, (e.base || e.food)?.servingName)
+const baseOf = f => ({ per: f.per, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, ...(f.servingG > 0 ? { servingG: f.servingG } : {}), ...(f.servingName ? { servingName: f.servingName } : {}),
   ...Object.fromEntries(EXTRAS.filter(k => f[k] != null).map(k => [k, f[k]])) })
 // "Fiber 5 g · Sugar 2 g · Sodium 300 mg" — only the ones present; empty when none.
 const extrasLine = m => EXTRAS.filter(k => m[k] != null).map(k => `${t(EXTRA_LABEL[k])} ${fmtNum(m[k])} ${k === 'sodium' ? 'mg' : 'g'}`).join(' · ')
@@ -96,7 +97,7 @@ const EXTRA_LABEL = { fiber: 'Fiber', sugar: 'Sugar', sodium: 'Sodium' }
 const shift = (iso, d) => { const dt = new Date(iso + 'T12:00:00'); dt.setDate(dt.getDate() + d); return isoOf(dt) }
 
 function unitOptions(food) {
-  const g = { value: 'g', label: 'g' }, ml = { value: 'ml', label: 'ml' }, sv = { value: 'serving', label: t('serving') }
+  const g = { value: 'g', label: 'g' }, ml = { value: 'ml', label: 'ml' }, sv = { value: 'serving', label: food.servingName || t('serving') }
   if (food.per === 'serving') return food.servingG > 0 ? [sv, g] : [sv]
   return food.servingG > 0 ? [g, ml, sv] : [g, ml]
 }
@@ -357,19 +358,21 @@ function CustomFood({ meal, iso, code, existing: ex, close }) {
   const [per, setPer] = useState(ex?.per || '100g')
   const [kcal, setKcal] = useState(ex?.kcal ?? null); const [p, setP] = useState(ex?.protein ?? null); const [c, setC] = useState(ex?.carbs ?? null); const [f, setF] = useState(ex?.fat ?? null)
   const [x, setX] = useState(() => Object.fromEntries(EXTRAS.map(k => [k, ex?.[k] ?? null])))
+  const [sName, setSName] = useState(ex?.servingName || ''); const [sG, setSG] = useState(ex?.servingG ?? null)
   code = code || ex?.barcode
   const build = () => {
     if (!name.trim()) { toast(t('Give it a name')); return null }
     if (!(kcal > 0)) { toast(t('Enter calories')); return null }
     const food = { ...ex, id: ex?.id || 'f' + uid(), name: name.trim(), per, kcal: Math.round(kcal), protein: numN(p) || 0, carbs: numN(c) || 0, fat: numN(f) || 0, source: 'custom', ...(code ? { barcode: code } : {}) }
     for (const k of EXTRAS) { if (numN(x[k]) != null) food[k] = numN(x[k]); else delete food[k] }
+    if (sG > 0) { food.servingG = sG; if (sName.trim()) food.servingName = sName.trim(); else delete food.servingName } else { delete food.servingG; delete food.servingName }
     upsertFood(food)
     return food
   }
   if (ex) return <>
     <h3>{t('Edit food')}</h3>
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Past log entries keep the values they were logged with.')}</div>
-    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX }} />
+    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX, sName, setSName, sG, setSG }} />
     <Button variant="primary" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Save')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="danger" icon="trash" onClick={() => { delFood(ex.id); close(); toast(t('Food deleted')) }}>{t('Delete food')}</Button>
@@ -378,14 +381,14 @@ function CustomFood({ meal, iso, code, existing: ex, close }) {
     <h3>{t('New food')}</h3>
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Saved to your foods so you can log it again.')}</div>
     {code && <div className="muted small" style={{ marginBottom: 12 }}>{t('Barcode: {0}', code)}</div>}
-    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX }} />
+    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX, sName, setSName, sG, setSG }} />
     <Button variant="primary" onClick={() => { const food = build(); if (food) { close(); openPortion(food, meal, iso) } }}>{t('Save & log')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="ghost" className="dim" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Just save')}</Button>
   </>
 }
 
-function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX }) {
+function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX, sName, setSName, sG, setSG }) {
   return <>
     <input className="field" placeholder={t('Name')} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
     <div style={{ margin: '12px 0' }}>
@@ -402,6 +405,10 @@ function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, set
     <div className="row cfgrow" style={{ marginBottom: 14 }}>
       {EXTRAS.map(k => <div key={k} className="stp-w"><span className="stp-l">{t(EXTRA_LABEL[k])} ({k === 'sodium' ? 'mg' : 'g'})</span>
         <NumberField value={x[k]} nullable decimal={k !== 'sodium'} onChange={v => setX(o => ({ ...o, [k]: v }))} placeholder={t('optional')} /></div>)}
+    </div>
+    <div className="row cfgrow" style={{ marginBottom: 14 }}>
+      <div className="stp-w" style={{ flex: 2 }}><span className="stp-l">{t('Serving name')}</span><input className="field" placeholder={t('e.g. cup, slice')} value={sName} onChange={e => setSName(e.target.value)} maxLength={20} /></div>
+      <div className="stp-w"><span className="stp-l">{t('Grams each')}</span><NumberField value={sG} nullable onChange={setSG} placeholder={t('optional')} /></div>
     </div>
   </>
 }
