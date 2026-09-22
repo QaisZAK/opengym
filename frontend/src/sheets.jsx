@@ -3,7 +3,7 @@ import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, allExercises, equipmentOf } from './lib/exercises.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
-import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isWork } from './lib/history.js'
+import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isWork, SET_TYPES, putWorkout, pastWorkout } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, getLang, INSTR_LANGS } from './lib/i18n.js'
 import { nav } from './lib/nav.js'
@@ -11,7 +11,7 @@ import { TEMPLATES, templatePlan } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
-import { Button, Slider, Switch, Segmented, SelectRow, TextArea } from './components/ui.jsx'
+import { Button, Slider, Switch, Segmented, SelectRow, TextArea, NumberField, Check } from './components/ui.jsx'
 import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
@@ -776,10 +776,74 @@ function WorkoutDetail({ w, close }) {
           <div className="ss">{e.sets.filter(s => s.done).map(s => setLabel(e.id, s, e.target)).join('  ·  ') || t('no sets')}</div></div>
       </div>
     })}
+    <Button icon="pencil" onClick={() => { close(); workoutEditSheet(st.workouts.find(x => x.id === w.id) || w) }}>{t('Edit workout')}</Button>
+    <div style={{ height: 8 }} />
     <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), message: t('This removes it from your history for good.'), confirmText: t('Delete'), danger: true, onConfirm: () => { update(s => { s.workouts = s.workouts.filter(x => x.id !== w.id) }); close(); toast(t('Workout deleted')) } })}>{t('Delete workout')}</Button>
   </>
 }
 export const workoutDetailSheet = w => ui().openSheet(close => <WorkoutDetail w={w} close={close} />)
+
+// Edit a finished workout (or a new back-dated one): date, duration, and every set. PRs stay as
+// they were recorded at the time — re-deriving them after the fact would rewrite history.
+const SET_FIELDS = { cardio: [['min', 'min', false], ['speed', 'km/h', true]], time: [['sec', 's', false], ['w', null, true]], reps: [['w', null, true], ['r', 'reps', false]] }
+function WorkoutEdit({ w: orig, isNew, close }) {
+  const st = useStore(s => s.S)
+  const [w, setW] = useState(() => JSON.parse(JSON.stringify(orig)))
+  const [mins, setMins] = useState(Math.max(1, Math.round(((orig.end || orig.start) - orig.start) / 60000) || 60))
+  const mut = fn => setW(x => { const y = JSON.parse(JSON.stringify(x)); fn(y); return y })
+  const save = () => {
+    const start = w.d === orig.d ? orig.start : new Date(w.d + 'T12:00:00').getTime()
+    const out = { ...w, start, end: start + Math.max(1, mins) * 60000, entries: w.entries.filter(e => e.sets.length) }
+    out.vol = workoutVolume(out)
+    update(s => { s.workouts = putWorkout(s.workouts, out) })
+    close(); toast(isNew ? t('Workout logged') : t('Workout updated'))
+  }
+  const addEx = () => exercisePicker(ex => mut(x => { const cfg = defaultConfig(ex.id); x.entries.push({ id: ex.id, target: cfg, topW: null, sets: buildSets(st, { ...cfg, id: ex.id }).slice(0, 1).map(s => ({ ...s, done: true })) }) }))
+  return <>
+    <h3>{isNew ? t('Log a past workout') : t('Edit workout')}</h3>
+    <div className="row cfgrow" style={{ marginBottom: 12 }}>
+      <div className="stp-w"><span className="stp-l">{t('Date')}</span><input type="date" className="timef" value={w.d} max={todayISO()} onChange={e => e.target.value && mut(x => { x.d = e.target.value })} /></div>
+      <Stepper label={t('Minutes')} value={mins} step={5} decimal={false} onChange={setMins} />
+    </div>
+    {w.entries.map((e, ei) => {
+      const mode = modeOf({ ...(e.target || {}), id: e.id })
+      return <div key={ei} className="card" style={{ padding: 10, marginBottom: 10 }}>
+        <div className="row between" style={{ marginBottom: 6 }}>
+          <b className="capitalize">{(EXIDX[e.id] || {}).n || e.id}</b>
+          <button className="iconbtn" style={{ color: 'var(--red)' }} aria-label={t('Remove exercise')} onClick={() => mut(x => { x.entries.splice(ei, 1) })}><Icon name="trash" /></button>
+        </div>
+        {e.sets.map((s, si) => <div key={si} className="row" style={{ gap: 6, marginBottom: 6 }}>
+          <span className="dim small" style={{ width: 18 }}>{SET_TYPES[s.type] || si + 1}</span>
+          {SET_FIELDS[mode].map(([f, u, dec]) => <label key={f} className="row grow" style={{ gap: 4 }}>
+            <NumberField decimal={dec} value={s[f] ?? 0} onChange={v => mut(x => { x.entries[ei].sets[si][f] = v })} className="field" style={{ padding: '8px 6px', textAlign: 'center', background: 'var(--surface-2)', minWidth: 0 }} aria-label={f} />
+            <span className="dim small">{u || st.unit}</span></label>)}
+          <Check checked={!!s.done} onChange={() => mut(x => { x.entries[ei].sets[si].done = !s.done })} />
+          <button className="iconbtn" aria-label={t('Remove set')} onClick={() => mut(x => { x.entries[ei].sets.splice(si, 1) })}><Icon name="xmark" /></button>
+        </div>)}
+        <Button size="sm" icon="plus" onClick={() => mut(x => { const ss = x.entries[ei].sets; const { type, ...last } = ss[ss.length - 1] || {}; ss.push({ ...last, done: true }) })}>{t('Add set')}</Button>
+      </div>
+    })}
+    <Button icon="plus" onClick={addEx}>{t('Add exercise')}</Button>
+    <div style={{ height: 10 }} />
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+  </>
+}
+export const workoutEditSheet = (w, isNew) => ui().openSheet(close => <WorkoutEdit w={w} isNew={isNew} close={close} />)
+
+// Start a back-dated entry from a routine (or freestyle), then refine it in the editor.
+export function logPastWorkout() {
+  const st = S()
+  ui().openSheet(close => <>
+    <h3>{t('Log a past workout')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Pick what you trained — you can adjust the date and every set next.')}</div>
+    <div className="list">
+      {st.routines.map(r => <div key={r.id} className="item" onClick={() => { close(); workoutEditSheet(pastWorkout(st, r, todayISO(), uid()), true) }}>
+        <span className="lrow-i"><Icon name={glyphOf(r.emoji)} /></span><div className="grow"><div className="tt">{r.name}</div></div><Icon name="chevronRight" className="chev" /></div>)}
+      <div className="item" onClick={() => { close(); workoutEditSheet({ ...pastWorkout(st, null, todayISO(), uid()), name: t('Freestyle') }, true) }}>
+        <span className="lrow-i"><Icon name="shuffle" /></span><div className="grow"><div className="tt">{t('Freestyle')}</div></div><Icon name="chevronRight" className="chev" /></div>
+    </div>
+  </>)
+}
 
 /* ============================ calendar ============================ */
 function Calendar({ start, close }) {

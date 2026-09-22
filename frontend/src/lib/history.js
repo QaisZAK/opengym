@@ -185,6 +185,21 @@ export function buildSets(S, cfg) {
   }
   return sets
 }
+// Insert or replace a finished workout keeping history in date order — readers such as
+// lastEntryFor walk it from the end and assume the newest session is last.
+export function putWorkout(workouts, w) {
+  return [...workouts.filter(x => x.id !== w.id), w]
+    .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : (a.start || 0) - (b.start || 0)))
+}
+
+// A back-dated session built from a routine's plan (every set ticked), to be adjusted in the
+// editor before saving. Freestyle when there's no routine.
+export function pastWorkout(S, routine, iso, id) {
+  const start = new Date(iso + 'T12:00:00').getTime()
+  const entries = (routine ? routine.ex : []).map(cfg => ({ id: cfg.id, target: { ...cfg }, topW: null, sets: buildSets(S, cfg).map(s => ({ ...s, done: true })) }))
+  return { id, d: iso, start, end: start + 3600000, routineId: routine ? routine.id : null, name: routine ? routine.name : 'Workout', bw: null, entries, prs: [], manual: true }
+}
+
 export function workoutVolume(w) {
   let v = 0
   w.entries.forEach(e => e.sets.forEach(s => { if (isWork(s)) v += (s.w || 0) * (s.r || 0) }))

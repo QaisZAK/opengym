@@ -1,8 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, warmupRamp, bestWeightFor, lastEntryFor, nextSetType } from './history.js'
+import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, warmupRamp, bestWeightFor, lastEntryFor, nextSetType, putWorkout, pastWorkout } from './history.js'
 import { EXDB } from './exercises.js'
 import { readSession } from './progression.js'
 import { bestSetOf } from './onerm.js'
+
+describe('past workouts', () => {
+  it('putWorkout keeps history in date order and replaces by id', () => {
+    const a = { id: 'a', d: '2026-01-05', start: 5 }, b = { id: 'b', d: '2026-01-09', start: 9 }
+    const back = { id: 'c', d: '2026-01-07', start: 7 }
+    expect(putWorkout([a, b], back).map(w => w.id)).toEqual(['a', 'c', 'b'])
+    expect(putWorkout([a, b], { ...a, d: '2026-01-10' }).map(w => w.id)).toEqual(['b', 'a'])
+  })
+  it('pastWorkout ticks every planned set on the chosen day', () => {
+    const S = { workouts: [], exWeights: {} }
+    const w = pastWorkout(S, { id: 'r', name: 'Push', ex: [{ id: LIFT, sets: 2, reps: 8, weight: 40 }] }, '2026-02-01', 'x')
+    expect(w).toMatchObject({ id: 'x', d: '2026-02-01', routineId: 'r', name: 'Push' })
+    expect(w.entries[0].sets).toEqual([{ w: 40, r: 8, done: true }, { w: 40, r: 8, done: true }])
+  })
+})
 
 describe('set-type tags', () => {
   it('cycles normal → W → D → A → F → normal', () => {
