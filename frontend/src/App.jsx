@@ -32,9 +32,12 @@ import Water from './views/Water.jsx'
 
 bindUI(useUI)   // lets the shared controls open sheets without importing the store at module scope
 
+// 'system' follows the OS light/dark setting (re-applied on change by the effect in Shell).
+const darkMQ = window.matchMedia?.('(prefers-color-scheme: dark)')
 function applyPrefs(theme, accent) {
   const de = document.documentElement
-  de.dataset.theme = theme === 'light' ? 'light' : 'dark'
+  const light = theme === 'light' || (theme === 'system' && darkMQ && !darkMQ.matches)
+  de.dataset.theme = light ? 'light' : 'dark'
   de.dataset.accent = ACCENTS[accent] ? accent : 'lime'
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.content = de.dataset.theme === 'light' ? '#f2f2f7' : '#000000'
@@ -47,7 +50,13 @@ function Shell() {
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
   useEffect(() => { setNav(navigate) }, [navigate])
-  useEffect(() => { applyPrefs(S.theme, S.accent) }, [S.theme, S.accent])
+  useEffect(() => {
+    applyPrefs(S.theme, S.accent)
+    if (S.theme !== 'system' || !darkMQ) return
+    const on = () => applyPrefs(S.theme, S.accent)
+    darkMQ.addEventListener('change', on)
+    return () => darkMQ.removeEventListener('change', on)
+  }, [S.theme, S.accent])
   useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
   useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
   // every tab/route change starts at the top of the page
