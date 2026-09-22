@@ -7,7 +7,7 @@ import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolu
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, getLang, INSTR_LANGS } from './lib/i18n.js'
 import { nav } from './lib/nav.js'
-import { starterRoutines } from './lib/starter.js'
+import { TEMPLATES, templatePlan } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
@@ -52,13 +52,21 @@ export function confirmSheet(opts) {
 }
 
 /* ============================ starter plan ============================ */
+// Pick a template; its routines are added and its days take over those weekdays.
 export function loadStarterPlan() {
-  const [push, pull, legs] = starterRoutines()
-  update(st => {
-    st.routines.push(push, pull, legs)
-    st.week[1] = push.id; st.week[3] = pull.id; st.week[5] = legs.id
-  })
-  toast(t('Starter plan loaded — Mon Push · Wed Pull · Fri Legs'))
+  ui().openSheet(close => <>
+    <h3>{t('Starter plans')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Adds the routines and fills in their days — edit anything afterwards.')}</div>
+    <div className="list">{TEMPLATES.map(tpl => <div key={tpl.key} className="item" onClick={() => {
+      const { routines, week } = templatePlan(tpl.key)
+      update(st => { st.routines.push(...routines); Object.assign(st.week, week) })
+      close(); toast(t('{0} loaded', t(tpl.name)))
+    }}>
+      <span className="lrow-i"><Icon name={tpl.spec[0][1]} /></span>
+      <div className="grow"><div className="tt">{t(tpl.name)}</div><div className="ss">{t(tpl.desc)}</div></div>
+      <Icon name="plus" className="chev" />
+    </div>)}</div>
+  </>)
 }
 
 /* ============================ weight picker (shared: body weight + goal) ============================ */

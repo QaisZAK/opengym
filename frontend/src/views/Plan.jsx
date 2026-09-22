@@ -51,7 +51,7 @@ export default function Plan() {
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
         <Icon name="chevronRight" className="chev" /></div>)}</div> : <>
         <div className="empty"><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
-        <Button icon="sparkles" onClick={loadStarterPlan}>{t('Load starter plan (Push / Pull / Legs)')}</Button>
+        <Button icon="sparkles" onClick={loadStarterPlan}>{t('Load a starter plan')}</Button>
       </>}
       <h4 className="sec" style={{ marginTop: 22 }}>{t('Exercises')}</h4>
       <div className="list">
