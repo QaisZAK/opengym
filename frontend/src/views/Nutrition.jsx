@@ -8,7 +8,7 @@ import { fmtNum, fmtDate, todayISO, isoOf, uid } from '../lib/format.js'
 import { lastBW } from '../lib/history.js'
 import { t } from '../lib/i18n.js'
 import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, ACTIVITY } from '../lib/nutrition.js'
-import { localSearch, FOODS } from '../lib/foodDB.js'
+import { localSearch, quickFoods, FOODS } from '../lib/foodDB.js'
 import { offSearch, offBarcode } from '../lib/foodApi.js'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, Button, Segmented, NumberField, Stepper, SelectRow, SearchField, Switch } from '../components/ui.jsx'
@@ -28,8 +28,15 @@ function nz(s) {
   n.targets = n.targets || { kcal: null, protein: null, carbs: null, fat: null, manual: false }
   n.log = n.log || {}; n.foods = n.foods || []; n.meals = n.meals || []; n.recipes = n.recipes || []
   n.prefs = n.prefs || { avoid: '', halal: false, notes: '' }
+  n.favs = n.favs || []
   return n
 }
+const sameFood = (a, b) => a.name.toLowerCase() === b.name.toLowerCase()
+const isFav = food => (getS().nutrition?.favs || []).some(f => sameFood(f, food))
+const toggleFav = food => update(s => {
+  const n = nz(s); const i = n.favs.findIndex(f => sameFood(f, food))
+  if (i >= 0) n.favs.splice(i, 1); else n.favs.push({ ...baseOf(food), name: food.name, source: food.source })
+})
 
 const addEntry = (iso, entry) => update(s => { const n = nz(s); (n.log[iso] = n.log[iso] || []).push({ id: uid(), ...entry }) })
 const updateEntry = (iso, id, entry) => update(s => { const n = nz(s); const d = n.log[iso] || []; const i = d.findIndex(e => e.id === id); if (i >= 0) d[i] = { ...d[i], ...entry, id } })
@@ -142,7 +149,7 @@ function FoodRow({ food, onClick }) {
   return (
     <div className="item" onClick={onClick}>
       <div className="grow">
-        <div className="tt">{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 6 }}>{t('est.')}</span>}</div>
+        <div className="tt">{food.fav && <Icon name="starFill" style={{ color: 'var(--yellow)', marginRight: 4 }} />}{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 6 }}>{t('est.')}</span>}</div>
         <div className="ss">{fmtNum(food.kcal)} kcal · {per}{food.brand ? ' · ' + food.brand : ''}</div>
       </div>
       <Icon name="plus" className="chev" />
@@ -239,6 +246,7 @@ function LogSheet({ meal, iso, onPick, close }) {
   const [off, setOff] = useState([])
   const [loading, setLoading] = useState(false)
   const local = localSearch(q, foods)
+  const quick = q.trim() ? [] : quickFoods(n.log, n.favs)
   const pick = onPick || (f => openPortion(f, meal, iso))
   useEffect(() => {
     setOff([])
@@ -264,6 +272,10 @@ function LogSheet({ meal, iso, onPick, close }) {
         {recipes.map(r => <RecipeRow key={r.id} r={r} onClick={() => openPortion(recFood(r), meal, iso)} />)}
       </div>
     </>}
+    {quick.length > 0 && <>
+      <div className="sect-t" style={{ padding: '12px 2px 2px' }}>{t('Favourites & recent')}</div>
+      <div className="list">{quick.map(f => <FoodRow key={'q' + f.name} food={f} onClick={() => pick(f)} />)}</div>
+    </>}
     <div className="list" style={{ marginTop: 10 }}>
       {local.map(f => <FoodRow key={f.id || f.code || f.name} food={f} onClick={() => pick(f)} />)}
       {off.length > 0 && <div className="sect-t" style={{ padding: '10px 2px 2px' }}>Open Food Facts</div>}
@@ -281,6 +293,7 @@ function Portion({ food, meal, iso, editId, initQty, initUnit, onAdd, close }) {
   const [unit, setUnit] = useState(initUnit && opts.some(o => o.value === initUnit) ? initUnit : opts[0].value)
   const [qty, setQty] = useState(initQty ?? defaultQty(food, initUnit || opts[0].value))
   const m = entryMacros(food, qty, unit)
+  const [fav, setFav] = useState(() => isFav(food))
   const save = () => {
     if (!(qty > 0)) { toast(t('Enter a portion')); return }
     if (onAdd) { onAdd({ food: { ...baseOf(food), name: food.name }, qty: +qty, unit }); close(); return } // into a meal/recipe, not the day
@@ -289,7 +302,9 @@ function Portion({ food, meal, iso, editId, initQty, initUnit, onAdd, close }) {
     close(); toast(t('Logged'))
   }
   return <>
-    <h3>{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 8 }}>{t('estimate')}</span>}</h3>
+    <h3 className="row" style={{ gap: 8 }}><span className="grow">{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 8 }}>{t('estimate')}</span>}</span>
+      <button className="iconbtn" style={fav ? { color: 'var(--yellow)' } : undefined} onClick={() => { toggleFav(food); setFav(!fav) }}
+        aria-label={fav ? t('Remove from favourites') : t('Add to favourites')} aria-pressed={fav}><Icon name={fav ? 'starFill' : 'star'} /></button></h3>
     {!onAdd && <div className="muted small" style={{ marginBottom: 12 }}>{t('Into {0}', mealLabel(meal))}</div>}
     {opts.length > 1 && <div style={{ marginBottom: 12 }}><Segmented options={opts} value={unit} onChange={u => { setUnit(u); setQty(defaultQty(food, u)) }} /></div>}
     <div className="row cfgrow" style={{ marginBottom: 14 }}>

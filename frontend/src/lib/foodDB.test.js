@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest'
-import { localSearch, FOODS } from './foodDB.js'
+import { localSearch, quickFoods, FOODS } from './foodDB.js'
+
+describe('quickFoods', () => {
+  const b = { per: '100g', kcal: 100, protein: 1, carbs: 1, fat: 1 }
+  const log = {
+    '2026-01-01': [{ name: 'Oats', base: b }, { name: 'Egg', base: b }],
+    '2026-01-02': [{ name: 'Rice', base: b }, { name: 'Quick', qty: 1 }, { name: 'egg', base: b }]
+  }
+  it('lists favourites first, then most-recent log foods, deduped by name', () => {
+    const r = quickFoods(log, [{ name: 'Rice', ...b }])
+    expect(r.map(f => f.name)).toEqual(['Rice', 'egg', 'Oats'])
+    expect(r[0].fav).toBe(true)
+  })
+  it('skips quick-add entries (no base) and respects the limit', () => {
+    expect(quickFoods(log, [], 2).map(f => f.name)).toEqual(['egg', 'Rice'])
+    expect(quickFoods(undefined)).toEqual([])
+  })
+})
 
 describe('FOODS catalog', () => {
   it('ships a sizable offline catalog of common foods', () => {

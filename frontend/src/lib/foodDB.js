@@ -24,3 +24,21 @@ export function localSearch(q, customFoods = []) {
   scored.sort((a, b) => a.rank - b.rank || a.at - b.at || a.f.name.length - b.f.name.length)
   return scored.slice(0, 30).map(s => s.f)
 }
+
+// Quick-pick list for an empty search: favourites first (in starred order), then foods from the
+// log, most recently logged first, deduped by name. Recents are derived from the log itself (each
+// entry keeps its per-unit `base`), so there's no separate history to keep in sync.
+export function quickFoods(log = {}, favs = [], limit = 12) {
+  const seen = new Set(favs.map(f => f.name.toLowerCase()))
+  const out = favs.map(f => ({ ...f, fav: true }))
+  for (const iso of Object.keys(log).sort().reverse()) {
+    for (const e of [...(log[iso] || [])].reverse()) {
+      const k = (e.name || '').toLowerCase()
+      if (!e.base || !k || seen.has(k)) continue
+      seen.add(k)
+      out.push({ ...e.base, name: e.name, source: e.source })
+    }
+    if (out.length >= limit) break
+  }
+  return out.slice(0, Math.max(limit, favs.length))
+}
