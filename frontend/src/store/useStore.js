@@ -25,6 +25,9 @@ export const DEF = {
   google: null,
   // Body measurements: [{ d, t, waist, chest, … }] in cm (lib/measure.js), one entry per day.
   measurements: [],
+  // Standalone progress photos [{ d, id }] — Drive file ids only (photos attached to a weigh-in
+  // live on that bodyweight entry instead).
+  photos: [],
   // Nutrition (calorie & macro tracking). Off by default per profile — nutrition.on gates the tab
   // and screens, so a profile that never turns it on is byte-for-byte the app it was before. The
   // store overlay is shallow (top-level only), so helpers read sub-fields defensively: an older

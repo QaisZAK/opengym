@@ -119,6 +119,70 @@ function PhotoView({ clientId, fileId }) {
 }
 const openPhoto = (clientId, fileId) => ui().openSheet(close => <PhotoView clientId={clientId} fileId={fileId} />)
 
+// One Drive image, loaded with the in-memory token (object URL revoked on unmount).
+function DriveImg({ clientId, fileId, style }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    let u, live = true
+    photoUrl(clientId, fileId).then(x => { u = x; if (live) setUrl(x); else URL.revokeObjectURL(x) }).catch(() => {})
+    return () => { live = false; if (u) URL.revokeObjectURL(u) }
+  }, [clientId, fileId])
+  return url ? <img src={url} alt="" style={{ width: '100%', aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 10, display: 'block', ...style }} />
+    : <div style={{ width: '100%', aspectRatio: '3 / 4', borderRadius: 10, background: 'var(--surface-2)', ...style }} />
+}
+
+// Every progress photo: the ones attached to weigh-ins plus standalone ones (S.photos), oldest first.
+const allPhotos = st => [
+  ...st.bodyweight.filter(b => b.photo).map(b => ({ d: b.d, id: b.photo, w: b.w })),
+  ...(st.photos || []).map(p => ({ d: p.d, id: p.id }))
+].sort((a, b) => (a.d < b.d ? -1 : 1))
+
+// ponytail: loads full images for the grid; switch to Drive thumbnailLink if galleries get large.
+function Photos() {
+  const st = useStore(s => s.S)
+  const config = useStore(s => s.config)
+  const clientId = config?.google?.clientId
+  const list = allPhotos(st)
+  const [pick, setPick] = useState([0, list.length - 1])   // before / after indices
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+  const add = async f => {
+    setBusy(true)
+    try {
+      const folderId = await ensureFolder(clientId, st.google?.folderId)
+      const id = await uploadPhoto(clientId, folderId, await resizeImage(f), 'progress-' + todayISO() + '.jpg')
+      update(s => { s.google = { ...(s.google || {}), folderId }; s.photos = [...(s.photos || []), { d: todayISO(), id }] })
+      setPick(p => [p[0], list.length]); toast(t('Photo saved to your Drive'))
+    } catch (e) { toast(t('Photo upload failed: {0}', e.message)) }
+    setBusy(false)
+  }
+  const label = p => fmtDate(p.d, true) + (p.w ? ' · ' + fmtNum(p.w) + ' ' + st.unit : '')
+  const [a, b] = [list[Math.min(pick[0], list.length - 1)], list[Math.min(Math.max(pick[1], 0), list.length - 1)]]
+  const opts = list.map((p, i) => ({ value: i, label: label(p) }))
+  return <>
+    <h3>{t('Progress photos')}</h3>
+    <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) add(f) }} />
+    <Button icon="camera" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? t('Uploading…') : t('Add a photo')}</Button>
+    {list.length >= 2 && <>
+      <h4 className="sec">{t('Before & after')}</h4>
+      <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+        {[[a, 0], [b, 1]].map(([p, k]) => <div key={k} className="grow" style={{ minWidth: 0 }}>
+          <DriveImg clientId={clientId} fileId={p.id} />
+          <div className="sect-b" style={{ marginTop: 6 }}><SelectRow title={k ? t('After') : t('Before')} sheetTitle={t('Pick a photo')} value={pick[k]}
+            onChange={v => setPick(x => (k ? [x[0], v] : [v, x[1]]))} options={opts} /></div>
+        </div>)}
+      </div>
+    </>}
+    <h4 className="sec">{t('All photos')}</h4>
+    {list.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+      {[...list].reverse().map(p => <button key={p.id} onClick={() => openPhoto(clientId, p.id)} style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer', color: 'inherit' }} aria-label={label(p)}>
+        <DriveImg clientId={clientId} fileId={p.id} /><div className="dim" style={{ fontSize: 11, marginTop: 3 }}>{fmtDate(p.d)}</div>
+      </button>)}
+    </div> : <div className="muted small">{t('No photos yet — add one here or when you log your weight.')}</div>}
+  </>
+}
+export const photosSheet = () => ui().openSheet(() => <Photos />)
+
 function BwSheet({ required, onDone, close }) {
   const st = useStore(s => s.S)
   const config = useStore(s => s.config)

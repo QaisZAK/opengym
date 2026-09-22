@@ -10,7 +10,7 @@ import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS } from '../lib/i18n.js'
 import { DEMO, REPO } from '../lib/demo.js'
 import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
-import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
+import { loadStarterPlan, confirmSheet, importFromApp, photosSheet } from '../sheets.jsx'
 import { coachAvailable, hasConsent } from '../lib/coach.js'
 import { openTargets } from './Nutrition.jsx'
 import { driveConfigured, connectDrive, disconnectDrive } from '../lib/gdrive.js'
@@ -197,6 +197,7 @@ export default function Settings() {
       ? t('Photos you attach when logging weight are stored in your Google Drive — never on this server.')
       : t('Connect Google Drive to attach progress photos to your weigh-ins. They live in your Drive, not on the server.')}>
       {S.google?.connected ? <>
+        <Row icon="camera" iconTint="var(--acc)" title={t('Progress photos')} subtitle={t('Gallery, before & after')} accessory="chevron" onClick={photosSheet} />
         <Row icon="folder" iconTint="var(--acc)" title={t('Google Drive connected')} subtitle={t('Progress photos go to your Drive')} />
         <Row icon="signOut" iconTint="var(--red)" title={t('Disconnect')} danger onClick={disconnectGoogle} />
       </> : (
