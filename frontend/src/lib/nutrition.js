@@ -37,13 +37,19 @@ export function entryMacros(food, qty, unit) {
   } else { // 'g' or 'ml'
     factor = food.per === '100g' ? q / 100 : food.servingG > 0 ? q / food.servingG : 0
   }
-  return {
+  const out = {
     kcal: Math.round((food.kcal || 0) * factor),
     protein: r1((food.protein || 0) * factor),
     carbs: r1((food.carbs || 0) * factor),
     fat: r1((food.fat || 0) * factor)
   }
+  for (const k of EXTRAS) if (food[k] != null && factor > 0) out[k] = k === 'sodium' ? Math.round(food[k] * factor) : r1(food[k] * factor)
+  return out
 }
+
+// Optional nutrients (fiber g, sugar g, sodium mg). Only present when the food has them, so a
+// total only reports one when at least one entry carried it — "0 g fiber" would be a guess.
+export const EXTRAS = ['fiber', 'sugar', 'sodium']
 
 // Sum the macros already stored on each entry (entries snapshot their macros at log time, so
 // editing or deleting a food later never rewrites history).
@@ -52,7 +58,12 @@ export function dayTotals(entries) {
     kcal: a.kcal + (e.kcal || 0), protein: a.protein + (e.protein || 0),
     carbs: a.carbs + (e.carbs || 0), fat: a.fat + (e.fat || 0)
   }), { kcal: 0, protein: 0, carbs: 0, fat: 0 })
-  return { kcal: Math.round(sum.kcal), protein: r1(sum.protein), carbs: r1(sum.carbs), fat: r1(sum.fat) }
+  const out = { kcal: Math.round(sum.kcal), protein: r1(sum.protein), carbs: r1(sum.carbs), fat: r1(sum.fat) }
+  for (const k of EXTRAS) {
+    const has = (entries || []).filter(e => e[k] != null)
+    if (has.length) out[k] = k === 'sodium' ? Math.round(has.reduce((a, e) => a + e[k], 0)) : r1(has.reduce((a, e) => a + e[k], 0))
+  }
+  return out
 }
 
 // Total macros of a saved meal — a list of { food, qty, unit } items (each food carries its own
@@ -65,7 +76,9 @@ export function mealMacros(items) {
 export function recipePerServing(recipe) {
   const n = Math.max(1, Number(recipe?.servings) || 1)
   const tot = mealMacros(recipe?.items)
-  return { kcal: Math.round(tot.kcal / n), protein: r1(tot.protein / n), carbs: r1(tot.carbs / n), fat: r1(tot.fat / n) }
+  const out = { kcal: Math.round(tot.kcal / n), protein: r1(tot.protein / n), carbs: r1(tot.carbs / n), fat: r1(tot.fat / n) }
+  for (const k of EXTRAS) if (tot[k] != null) out[k] = k === 'sodium' ? Math.round(tot[k] / n) : r1(tot[k] / n)
+  return out
 }
 
 // What's left against target (negative = over).

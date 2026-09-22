@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, avoidList, ACTIVITY, GOAL } from './nutrition.js'
 
+describe('fiber / sugar / sodium', () => {
+  const oats = { per: '100g', kcal: 380, protein: 13, carbs: 67, fat: 7, fiber: 10, sugar: 1, sodium: 6 }
+  it('scale with the portion only when the food carries them', () => {
+    expect(entryMacros(oats, 50, 'g')).toMatchObject({ fiber: 5, sugar: 0.5, sodium: 3 })
+    expect(entryMacros({ per: '100g', kcal: 50 }, 100, 'g')).not.toHaveProperty('fiber')
+  })
+  it('only appear in a day total when some entry had them', () => {
+    expect(dayTotals([{ kcal: 100, fiber: 2 }, { kcal: 50 }, { kcal: 10, fiber: 1.5, sodium: 200 }])).toMatchObject({ fiber: 3.5, sodium: 200 })
+    expect(dayTotals([{ kcal: 100 }])).not.toHaveProperty('sugar')
+  })
+})
+
 describe('computeTargets (Mifflin-St Jeor)', () => {
   it('matches a hand-computed male maintenance target', () => {
     // BMR = 10·80 + 6.25·180 − 5·30 + 5 = 1780 ; TDEE = 1780·1.55 = 2759

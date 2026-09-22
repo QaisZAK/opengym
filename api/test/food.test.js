@@ -16,6 +16,13 @@ test('normalizeProduct maps an OFF product to our per-100g food shape', () => {
   })
 })
 
+test('normalizeProduct carries fiber, sugar and sodium (g → mg) when OFF has them', () => {
+  const f = normalizeProduct({ code: '9', product_name: 'Oats', nutriments: { 'energy-kcal_100g': 380, fiber_100g: 10.1, sugars_100g: 1, sodium_100g: 0.006 } })
+  assert.equal(f.fiber, 10.1)
+  assert.equal(f.sugar, 1)
+  assert.equal(f.sodium, 6)
+})
+
 test('normalizeProduct converts kJ energy when kcal is absent', () => {
   const f = normalizeProduct({
     code: '1', product_name: 'Juice',

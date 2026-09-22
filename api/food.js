@@ -31,6 +31,11 @@ export function normalizeProduct(p) {
   }
   const sg = num(p.serving_quantity)
   if (sg && sg > 0) food.servingG = round1(sg)
+  // Optional extras — only carried when OFF has them. Sodium comes in g/100g; the app uses mg.
+  const fiber = round1(num(n.fiber_100g)), sugar = round1(num(n.sugars_100g)), sodium = num(n.sodium_100g)
+  if (fiber != null) food.fiber = fiber
+  if (sugar != null) food.sugar = sugar
+  if (sodium != null) food.sodium = Math.round(sodium * 1000)
   return food
 }
 

@@ -7,7 +7,7 @@ import { useUI } from '../store/useUI.js'
 import { fmtNum, fmtDate, todayISO, isoOf, uid } from '../lib/format.js'
 import { lastBW } from '../lib/history.js'
 import { t } from '../lib/i18n.js'
-import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, ACTIVITY } from '../lib/nutrition.js'
+import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, ACTIVITY, EXTRAS } from '../lib/nutrition.js'
 import { localSearch, quickFoods, FOODS } from '../lib/foodDB.js'
 import { offSearch, offBarcode } from '../lib/foodApi.js'
 import Icon from '../components/Icon.jsx'
@@ -88,7 +88,11 @@ const MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
 const mealLabel = m => t({ breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snacks' }[m] || m)
 const unitLabel = (u, q) => (u === 'serving' ? t(q === 1 ? 'serving' : 'servings') : u)
 const portionLabel = e => fmtNum(e.qty) + ' ' + unitLabel(e.unit, e.qty)
-const baseOf = f => ({ per: f.per, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, ...(f.servingG > 0 ? { servingG: f.servingG } : {}) })
+const baseOf = f => ({ per: f.per, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, ...(f.servingG > 0 ? { servingG: f.servingG } : {}),
+  ...Object.fromEntries(EXTRAS.filter(k => f[k] != null).map(k => [k, f[k]])) })
+// "Fiber 5 g · Sugar 2 g · Sodium 300 mg" — only the ones present; empty when none.
+const extrasLine = m => EXTRAS.filter(k => m[k] != null).map(k => `${t(EXTRA_LABEL[k])} ${fmtNum(m[k])} ${k === 'sodium' ? 'mg' : 'g'}`).join(' · ')
+const EXTRA_LABEL = { fiber: 'Fiber', sugar: 'Sugar', sodium: 'Sodium' }
 const shift = (iso, d) => { const dt = new Date(iso + 'T12:00:00'); dt.setDate(dt.getDate() + d); return isoOf(dt) }
 
 function unitOptions(food) {
@@ -318,6 +322,7 @@ function Portion({ food, meal, iso, editId, initQty, initUnit, onAdd, close }) {
       <div className="tile"><div className="l">{t('Carbs')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fmtNum(m.carbs)}</div></div>
       <div className="tile"><div className="l">{t('Fat')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fmtNum(m.fat)}</div></div>
     </div>
+    {extrasLine(m) && <div className="muted small" style={{ margin: '-6px 2px 14px' }}>{extrasLine(m)}</div>}
     <Button variant="primary" onClick={save}>{editId ? t('Save') : onAdd ? t('Add') : t('Add to log')}</Button>
   </>
 }
@@ -351,18 +356,20 @@ function CustomFood({ meal, iso, code, existing: ex, close }) {
   const [name, setName] = useState(ex?.name || '')
   const [per, setPer] = useState(ex?.per || '100g')
   const [kcal, setKcal] = useState(ex?.kcal ?? null); const [p, setP] = useState(ex?.protein ?? null); const [c, setC] = useState(ex?.carbs ?? null); const [f, setF] = useState(ex?.fat ?? null)
+  const [x, setX] = useState(() => Object.fromEntries(EXTRAS.map(k => [k, ex?.[k] ?? null])))
   code = code || ex?.barcode
   const build = () => {
     if (!name.trim()) { toast(t('Give it a name')); return null }
     if (!(kcal > 0)) { toast(t('Enter calories')); return null }
     const food = { ...ex, id: ex?.id || 'f' + uid(), name: name.trim(), per, kcal: Math.round(kcal), protein: numN(p) || 0, carbs: numN(c) || 0, fat: numN(f) || 0, source: 'custom', ...(code ? { barcode: code } : {}) }
+    for (const k of EXTRAS) { if (numN(x[k]) != null) food[k] = numN(x[k]); else delete food[k] }
     upsertFood(food)
     return food
   }
   if (ex) return <>
     <h3>{t('Edit food')}</h3>
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Past log entries keep the values they were logged with.')}</div>
-    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF }} />
+    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX }} />
     <Button variant="primary" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Save')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="danger" icon="trash" onClick={() => { delFood(ex.id); close(); toast(t('Food deleted')) }}>{t('Delete food')}</Button>
@@ -371,14 +378,14 @@ function CustomFood({ meal, iso, code, existing: ex, close }) {
     <h3>{t('New food')}</h3>
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Saved to your foods so you can log it again.')}</div>
     {code && <div className="muted small" style={{ marginBottom: 12 }}>{t('Barcode: {0}', code)}</div>}
-    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF }} />
+    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX }} />
     <Button variant="primary" onClick={() => { const food = build(); if (food) { close(); openPortion(food, meal, iso) } }}>{t('Save & log')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="ghost" className="dim" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Just save')}</Button>
   </>
 }
 
-function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF }) {
+function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF, x, setX }) {
   return <>
     <input className="field" placeholder={t('Name')} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
     <div style={{ margin: '12px 0' }}>
@@ -391,6 +398,10 @@ function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, set
       <div className="stp-w"><span className="stp-l">{t('Protein (g)')}</span><NumberField value={p} nullable onChange={setP} /></div>
       <div className="stp-w"><span className="stp-l">{t('Carbs (g)')}</span><NumberField value={c} nullable onChange={setC} /></div>
       <div className="stp-w"><span className="stp-l">{t('Fat (g)')}</span><NumberField value={f} nullable onChange={setF} /></div>
+    </div>
+    <div className="row cfgrow" style={{ marginBottom: 14 }}>
+      {EXTRAS.map(k => <div key={k} className="stp-w"><span className="stp-l">{t(EXTRA_LABEL[k])} ({k === 'sodium' ? 'mg' : 'g'})</span>
+        <NumberField value={x[k]} nullable decimal={k !== 'sodium'} onChange={v => setX(o => ({ ...o, [k]: v }))} placeholder={t('optional')} /></div>)}
     </div>
   </>
 }
@@ -682,6 +693,7 @@ export default function Nutrition() {
       </>}
     </div>
 
+    {extrasLine(tot) && <div className="muted small" style={{ textAlign: 'center', margin: '-4px 0 12px' }}>{extrasLine(tot)}</div>}
     {MEALS.map(m => <MealSection key={m} meal={m} iso={iso} entries={entries} />)}
     {entries.length > 0 && <Button icon="clipboard" onClick={() => openCopy(iso)}>{t('Copy this day to…')}</Button>}
 
