@@ -18,6 +18,7 @@ import {
 } from '../lib/effort.js'
 import { Button, Segmented, SelectRow } from '../components/ui.jsx'
 import { dayTotals } from '../lib/nutrition.js'
+import { recordsOf } from '../lib/records.js'
 
 // Which muscles the training in a window actually hit — and, the point of the card,
 // which ones it keeps missing. Shading is relative within the window (lib/muscles.js).
@@ -156,6 +157,30 @@ function NutritionCard({ S }) {
 }
 
 // Stats = the analytics hub: all charts, progress and history live here.
+// All-time bests per exercise, most recently improved first.
+function RecordsCard({ S }) {
+  const [all, setAll] = useState(false)
+  const recs = Object.entries(recordsOf(S.workouts)).filter(([id, r]) => EXIDX[id] && Object.keys(r).length) // cardio has none
+    .map(([id, r]) => ({ id, r, last: Math.max(...Object.values(r).map(x => +new Date(x.d) || 0)) }))
+    .sort((a, b) => b.last - a.last)
+  if (!recs.length) return null
+  const chip = (label, x, v) => x && <span className="tag nocap" title={fmtDate(x.d, true)}>{label} <b>{v}</b></span>
+  return <div className="card">
+    <h2>{t('Records')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('all-time bests')}</span></h2>
+    {(all ? recs : recs.slice(0, 6)).map(({ id, r }) => <div key={id} style={{ padding: '8px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
+      <div className="capitalize" style={{ fontWeight: 600, marginBottom: 5 }}>{EXIDX[id].n}</div>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {chip(t('Top'), r.weight, `${fmtNum(r.weight?.v)} ${S.unit}`)}
+        {chip(t('1RM≈'), r.e1rm, `${fmtNum(r.e1rm?.v)} ${S.unit}`)}
+        {chip(t('Reps'), r.reps, `${r.reps?.v}${r.reps?.w ? ' @ ' + fmtNum(r.reps.w) : ''}`)}
+        {chip(t('Volume'), r.volume, fmtVol(r.volume?.v, S.unit))}
+        {chip(t('Hold'), r.hold, `${r.hold?.v}s`)}
+      </div>
+    </div>)}
+    {recs.length > 6 && <Button size="sm" variant="ghost" style={{ marginTop: 8 }} onClick={() => setAll(!all)}>{all ? t('Show less') : t('Show all {0}', recs.length)}</Button>}
+  </div>
+}
+
 export default function Stats() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
@@ -285,6 +310,7 @@ export default function Stats() {
       </div>
     </div>
 
+    <RecordsCard S={S} />
     {S.nutrition?.on && <NutritionCard S={S} />}
 
     {S.workouts.length > 0 && <>
