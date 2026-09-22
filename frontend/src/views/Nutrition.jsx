@@ -140,6 +140,7 @@ function MealSection({ meal, iso, entries }) {
         <Row key={e.id} title={e.name} subtitle={portionLabel(e)} value={fmtNum(e.kcal) + ' kcal'} onClick={() => openEntry(iso, e)} />
       ))}
       <Row icon="plus" iconTint="var(--acc)" title={t('Add food')} onClick={() => openLog(meal, iso)} />
+      {rows.length > 0 && <Row icon="clipboard" iconTint="var(--grey)" title={t('Copy {0} to…', mealLabel(meal))} onClick={() => openCopy(iso, meal)} />}
     </Section>
   )
 }
@@ -612,6 +613,27 @@ const openSuggest = iso => ui().openSheet(close => <Suggest iso={iso} close={clo
 const openPrefs = () => ui().openSheet(close => <Prefs close={close} />)
 
 /* ============================ view ============================ */
+// Copy a day's entries (or one meal's) onto another date — fresh ids, same meal slots.
+const copyEntries = (from, to, meal) => update(s => {
+  const n = nz(s); const src = (n.log[from] || []).filter(e => !meal || e.meal === meal)
+  ;(n.log[to] = n.log[to] || []).push(...src.map(e => ({ ...e, id: uid() })))
+})
+function CopySheet({ iso, meal, close }) {
+  const [to, setTo] = useState(iso < todayISO() ? todayISO() : shift(iso, 1))
+  return <>
+    <h3>{meal ? t('Copy {0}', mealLabel(meal)) : t('Copy this day')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('From {0}. Entries are added to whatever that day already has.', fmtDate(iso, true))}</div>
+    <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+      {[[shift(iso, 1), t('Next day')], [todayISO(), t('Today')], [shift(todayISO(), 1), t('Tomorrow')]].filter(([d], i, a) => d !== iso && a.findIndex(x => x[0] === d) === i)
+        .map(([d, l]) => <button key={d} className="chip" style={d === to ? { outline: '2px solid var(--acc)' } : undefined} onClick={() => setTo(d)}>{l}</button>)}
+    </div>
+    <input type="date" className="field" value={to} onChange={e => e.target.value && setTo(e.target.value)} />
+    <div style={{ height: 12 }} />
+    <Button variant="primary" disabled={to === iso} onClick={() => { copyEntries(iso, to, meal); close(); toast(t('Copied to {0}', fmtDate(to, true))) }}>{t('Copy')}</Button>
+  </>
+}
+const openCopy = (iso, meal) => ui().openSheet(close => <CopySheet iso={iso} meal={meal} close={close} />)
+
 export default function Nutrition() {
   const S = useStore(s => s.S)
   const n = S.nutrition || {}
@@ -661,6 +683,7 @@ export default function Nutrition() {
     </div>
 
     {MEALS.map(m => <MealSection key={m} meal={m} iso={iso} entries={entries} />)}
+    {entries.length > 0 && <Button icon="clipboard" onClick={() => openCopy(iso)}>{t('Copy this day to…')}</Button>}
 
     <div className="dim small" style={{ textAlign: 'center', margin: '6px 0 4px', lineHeight: 1.6 }}>
       {t('Regional dishes are estimates — edit a portion to match your recipe.')}
