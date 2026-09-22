@@ -40,7 +40,21 @@ function payload() {
   try { return JSON.parse(m[1]); } catch { return {}; }
 }
 const P = payload();
-const kind = P.task || (/change-set/i.test(prompt) ? 'review' : 'create');
+const kind = P.kind === 'meals' ? 'meals' : P.task || (/change-set/i.test(prompt) ? 'review' : 'create');
+
+// Meal plan: fill the slots not eaten yet, reusing a saved food when there is one.
+if (kind === 'meals') {
+  const saved = (P.savedFoods || [])[0];
+  const item = (name, qty, unit, kcal, protein, carbs, fat) => ({ name, qty, unit, kcal, protein, carbs, fat });
+  const all = {
+    breakfast: { name: 'Oats & yoghurt', items: [item('Rolled oats', 60, 'g', 228, 8, 40, 4), item('Greek yoghurt', 170, 'g', 165, 17, 7, 8)] },
+    lunch: { name: 'Chicken rice bowl', items: [item('Chicken breast, cooked', 150, 'g', 248, 46, 0, 5.4), item('Rice, cooked', 180, 'g', 234, 4.9, 51, 0.5)] },
+    dinner: { name: 'Salmon & potatoes', items: [item('Salmon, baked', 150, 'g', 312, 33, 0, 19), item('Potatoes, boiled', 250, 'g', 218, 4.8, 50, 0.3)] },
+    snack: { name: saved ? saved.name : 'Apple', items: [saved ? item(saved.name, saved.per === 'serving' ? 1 : 100, saved.per === 'serving' ? 'serving' : 'g', saved.kcal, saved.protein, saved.carbs, saved.fat) : item('Apple', 180, 'g', 94, 0.5, 25, 0.3)] }
+  };
+  const slots = Object.keys(all).filter(s => !(P.eatenSlots || []).includes(s));
+  out({ coach_contract: 1, meals: (slots.length ? slots : ['snack']).map(slot => ({ slot, ...all[slot] })), notes: 'Fixture plan — a fixed example, not tailored advice.' });
+}
 
 if (MODE === 'nochange' || (kind === 'review' && !(P.window?.workouts || []).length)) {
   out({ coach_contract: 1, nochange: true, reading: 'Not enough new training to read anything into yet — keep logging and ask again in a week.' });

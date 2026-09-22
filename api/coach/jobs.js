@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import * as cfgStore from './config.js';
 import { adapterFor } from './adapters/index.js';
 import * as payloadLib from './payload.js';
-import { extractJSON, validatePlan, validateReview, contractOK } from './validate.js';
+import { extractJSON, validatePlan, validateReview, validateMeals, contractOK } from './validate.js';
 
 const DATA = process.env.DATA_DIR || '/data';
 const COACH_DIR = path.join(DATA, 'coach');
@@ -34,7 +34,7 @@ const HISTORY_MAX = 20;
 
 const safe = uid => String(uid).replace(/[^a-zA-Z0-9_-]/g, '');
 const userFile = uid => path.join(COACH_DIR, safe(uid) + '.json');
-const EMPTY = { daily: null, current: null, pending: null, history: [] };
+const EMPTY = { daily: null, current: null, pending: null, mealPlan: null, history: [] };
 
 export function readUser(uid) {
   try { return { ...EMPTY, ...JSON.parse(fs.readFileSync(userFile(uid), 'utf8')) }; }
@@ -94,6 +94,7 @@ export function status(uid) {
   return {
     job: rec.current ? { id: rec.current.id, kind: rec.current.kind, state: rec.current.state, startedAt: rec.current.startedAt } : null,
     pending: rec.pending || null,
+    mealPlan: rec.mealPlan || null,
     cap: capState(uid)
   };
 }
@@ -127,6 +128,8 @@ export function enqueue(uid, opts) {
   // Consent is enforced here, server-side, not by the screen that collects it: a UI-only gate
   // is not a gate (FR-08/13).
   if (!S?.coach?.consent?.agreedAt) throw new CoachError('consent', 'the Coach needs your go-ahead first');
+  // Meal plans send nutrition data, which only consent v2+ disclosed.
+  if (opts.kind === 'meals' && (S.coach.consent.version || 0) < 2) throw new CoachError('consent', 'the Coach needs your go-ahead first');
 
   const caps = cfgStore.load().caps || {};
   const { used, limit } = capState(uid);
@@ -141,11 +144,13 @@ export function enqueue(uid, opts) {
   const job = {
     id: crypto.randomBytes(8).toString('hex'),
     uid,
-    kind: opts.kind,                                  // 'create' | 'review'
+    kind: opts.kind,                                  // 'create' | 'review' | 'meals'
     trigger: opts.trigger || 'manual',                // 'manual' | 'scheduled'
     intake: opts.intake || null,
     note: opts.note || null,
     refine: opts.refine || null,
+    request: opts.request || null,
+    today: opts.today || null,
     state: 'queued',
     startedAt: Date.now()
   };
@@ -176,6 +181,7 @@ function finish(job, result) {
     ...rec,
     current: null,
     pending: result.pending !== undefined ? result.pending : rec.pending,
+    mealPlan: result.mealPlan !== undefined ? result.mealPlan : rec.mealPlan,
     history
   });
   cfgStore.logJob({
@@ -183,7 +189,7 @@ function finish(job, result) {
     outcome: result.outcome, errorClass: result.errorClass || null,
     ms: Date.now() - job.startedAt, detail: result.detail || null
   });
-  if (result.outcome === 'ready' && onProposal) {
+  if (result.outcome === 'ready' && result.pending && onProposal) {
     try { onProposal(job.uid, result.pending, job); } catch (e) { console.error('coach notify failed', e); }
   }
 }
@@ -201,8 +207,10 @@ function promptPart(name) {
   return promptCache.get(name);
 }
 export function buildPrompt(kind, payload, repair) {
-  const task = kind === 'review' ? 'review.md' : payload.refine ? 'refine.md' : 'create.md';
-  let out = promptPart('common.md') + '\n\n---\n\n' + promptPart(task) +
+  // A meal plan is not training advice: its prompt stands alone instead of extending common.md.
+  const head = kind === 'meals' ? promptPart('meals.md')
+    : promptPart('common.md') + '\n\n---\n\n' + promptPart(kind === 'review' ? 'review.md' : payload.refine ? 'refine.md' : 'create.md');
+  let out = head +
     '\n\n---\n\n## Payload\n\n```json\n' + JSON.stringify(payload, null, 1) + '\n```\n';
   if (repair) {
     out += '\n\n---\n\n' + promptPart('repair.md')
@@ -225,7 +233,7 @@ async function execute(job) {
   if (!adapter) return finish(job, { outcome: 'failed', errorClass: 'off' });
 
   const pendingCreate = job.refine ? readUser(job.uid).pending : null;
-  const payload = payloadLib.build(S, job.uid, {
+  const payload = job.kind === 'meals' ? payloadLib.buildMeals(S, job.uid, { request: job.request, today: job.today || todayISO() }) : payloadLib.build(S, job.uid, {
     kind: job.kind,
     intake: job.intake,
     note: job.note,
@@ -249,6 +257,9 @@ async function execute(job) {
     }
     if (!attempt.ok) {
       return finish(job, { outcome: 'failed', errorClass: attempt.errorClass, detail: attempt.detail });
+    }
+    if (job.kind === 'meals') {
+      return finish(job, { outcome: 'ready', mealPlan: { id: job.id, createdAt: Date.now(), date: payload.meta.today, ...attempt.result } });
     }
     if (attempt.nochange) {
       return finish(job, { outcome: 'nochange', pending: null, detail: null });
@@ -286,6 +297,10 @@ async function invoke(adapter, cfg, payload, jobDir, env, job, repair) {
     return { ok: false, repairable: !repair, errors: [`coach_contract must be ${payloadLib.CONTRACT}`], raw: r.text, errorClass: 'unusable' };
   }
 
+  if (job.kind === 'meals') {
+    const m = validateMeals(parsed.value);
+    return m.ok ? { ok: true, result: m.plan } : { ok: false, repairable: !repair, errors: m.errors, raw: r.text, errorClass: 'unusable' };
+  }
   const v = job.kind === 'review'
     ? validateReview(parsed.value, payload.plan)
     : validatePlan(parsed.value, { workingWeights: payload.history?.workingWeights, daysPerWeek: payload.coachProfile?.daysPerWeek });
@@ -329,6 +344,13 @@ export function resolvePending(uid, { accepted = [], rejected = [], dismissed = 
     accepted: accepted.length, rejected: rejected.length, at: Date.now()
   }].slice(-HISTORY_MAX);
   writeUser(uid, { ...rec, pending: null, history });
+  return { ok: true };
+}
+
+/** The user logged, saved or dismissed the meal plan. */
+export function clearMeals(uid) {
+  const rec = readUser(uid);
+  if (rec.mealPlan) writeUser(uid, { ...rec, mealPlan: null });
   return { ok: true };
 }
 

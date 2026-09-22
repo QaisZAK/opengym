@@ -10,6 +10,9 @@ import { t } from '../lib/i18n.js'
 import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, suggestFor, ACTIVITY, EXTRAS } from '../lib/nutrition.js'
 import { localSearch, quickFoods, FOODS } from '../lib/foodDB.js'
 import { offSearch, offBarcode } from '../lib/foodApi.js'
+import { coachAvailable, hasConsent } from '../lib/coach.js'
+import { useCoachStatus, requestMeals, clearMealPlan, JOB_ERRORS } from '../lib/coach-api.js'
+import { nav } from '../lib/nav.js'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, Button, Segmented, NumberField, Stepper, SelectRow, SearchField, Switch } from '../components/ui.jsx'
 
@@ -621,13 +624,78 @@ function Suggest({ iso, close }) {
       </div>)}
       {!list.length && <div className="muted small" style={{ padding: 8 }}>{rem.kcal <= 0 && tg.kcal > 0 ? t("You've hit today's calories.") : t('Save a few meals or foods and they’ll show up here.')}</div>}
     </div>
-    <div className="dim small" style={{ marginTop: 10 }}>{t('Tapping adds it to {0}. AI-generated suggestions arrive when the Coach is connected.', mealLabel(slot))}</div>
+    <div className="dim small" style={{ marginTop: 10 }}>{t('Tapping adds it to {0}.', mealLabel(slot))}</div>
+    <div style={{ height: 8 }} />
+    <Button icon="sparkles" onClick={() => { close(); openAiMeals() }}>{t('AI meal plan')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="ghost" icon="gear" onClick={() => { close(); openPrefs() }}>{t('Food preferences')}</Button>
   </>
 }
 
 const openSuggest = iso => ui().openSheet(close => <Suggest iso={iso} close={close} />)
+
+/* ---------- AI meal plan (Coach job kind 'meals') ---------- */
+// An AI item → a per-100g/serving food, so a logged item keeps a rescalable base (portion edits,
+// recents, saving as a meal all work like any other food).
+const aiFood = it => {
+  const k = it.unit === 'serving' ? 1 / it.qty : 100 / it.qty
+  return { name: it.name, per: it.unit === 'serving' ? 'serving' : '100g', kcal: Math.round(it.kcal * k), protein: Math.round(it.protein * k * 10) / 10, carbs: Math.round(it.carbs * k * 10) / 10, fat: Math.round(it.fat * k * 10) / 10, source: 'ai' }
+}
+const logAiMeal = (m, iso) => update(s => {
+  const n = nz(s); const day = (n.log[iso] = n.log[iso] || [])
+  m.items.forEach(it => day.push({ id: uid(), meal: m.slot, name: it.name, qty: it.qty, unit: it.unit, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, source: 'ai', base: baseOf(aiFood(it)) }))
+})
+function AiMeals({ close }) {
+  const S = useStore(s => s.S), config = useStore(s => s.config), user = useStore(s => s.user)
+  const { job, mealPlan, refresh } = useCoachStatus(true)
+  const [req, setReq] = useState('')
+  const [busy, setBusy] = useState(false)
+  const iso = todayISO()
+  // A meal job that ends without a plan failed (the reason is on the admin card).
+  const was = useRef(false)
+  useEffect(() => {
+    const now = job?.kind === 'meals'
+    if (was.current && !now && !mealPlan) toast(t('The Coach couldn’t make a meal plan this time — try again.'))
+    was.current = now
+  }, [job?.kind, !!mealPlan])
+  if (!coachAvailable(config, user) || !hasConsent(S)) return <>
+    <h3>{t('AI meal plan')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{coachAvailable(config, user) ? t('The Coach plans meals from your targets and preferences once you’ve given it the go-ahead.') : t('Needs the AI Coach, which isn’t set up on this instance.')}</div>
+    {coachAvailable(config, user) && <Button variant="primary" icon="sparkles" onClick={() => { close(); nav('/coach') }}>{t('Set up the Coach')}</Button>}
+  </>
+  const ask = async () => {
+    setBusy(true)
+    try { await requestMeals(req.trim()); await refresh() } catch (e) { toast(t(JOB_ERRORS[e.code] || e.message)) }
+    setBusy(false)
+  }
+  const dismiss = async () => { try { await clearMealPlan() } catch { /* already gone */ } refresh() }
+  const planning = job?.kind === 'meals'
+  const mt = m => dayTotals(m.items)
+  return <>
+    <h3>{t('AI meal plan')}</h3>
+    {planning ? <div className="muted small" style={{ padding: '18px 0', textAlign: 'center' }}>{t('Planning your meals — this takes a minute or two…')}</div>
+      : mealPlan ? <>
+        <div className="muted small" style={{ marginBottom: 10 }}>{mealPlan.notes || t('Planned for {0}.', fmtDate(mealPlan.date, true))}</div>
+        {mealPlan.meals.map((m, i) => <div key={i} className="card" style={{ padding: 12, marginBottom: 10 }}>
+          <div className="row between"><b>{m.name}</b><span className="tag">{mealLabel(m.slot)}</span></div>
+          {m.items.map((it, j) => <div key={j} className="row between small" style={{ padding: '4px 0' }}><span>{it.name} · {fmtNum(it.qty)} {unitLabel(it.unit, it.qty)}</span><span className="muted">{fmtNum(it.kcal)} kcal</span></div>)}
+          <div className="dim small" style={{ margin: '4px 0 8px' }}>{fmtNum(mt(m).kcal)} kcal · P {fmtNum(mt(m).protein)} · C {fmtNum(mt(m).carbs)} · F {fmtNum(mt(m).fat)}</div>
+          <div className="row" style={{ gap: 8 }}>
+            <Button size="sm" variant="tinted" icon="plus" onClick={() => { logAiMeal(m, iso); toast(t('Logged {0}', m.name)) }}>{t('Log to {0}', mealLabel(m.slot))}</Button>
+            <Button size="sm" icon="clipboard" onClick={() => { upsertMeal({ id: 'm' + uid(), name: m.name, items: m.items.map(it => ({ food: aiFood(it), qty: it.qty, unit: it.unit })) }); toast(t('Saved to your meals')) }}>{t('Save meal')}</Button>
+          </div>
+        </div>)}
+        <Button variant="ghost" className="dim" onClick={dismiss}>{t('Dismiss plan')}</Button>
+      </> : <>
+        <div className="muted small" style={{ marginBottom: 10 }}>{t('Plans the rest of today from your targets, what you’ve eaten, your preferences and saved foods.')}</div>
+        <input className="field" placeholder={t('Anything specific? e.g. high protein, quick lunches')} value={req} onChange={e => setReq(e.target.value)} maxLength={300} />
+        <div style={{ height: 10 }} />
+        <Button variant="primary" icon="sparkles" disabled={busy} onClick={ask}>{t('Plan my meals')}</Button>
+      </>}
+    <div className="dim small" style={{ marginTop: 10 }}>{t('AI estimates — check portions and macros before you rely on them.')}</div>
+  </>
+}
+const openAiMeals = () => ui().openSheet(close => <AiMeals close={close} />)
 const openPrefs = () => ui().openSheet(close => <Prefs close={close} />)
 
 /* ============================ view ============================ */

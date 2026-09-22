@@ -35,7 +35,7 @@ function CoachCard({ nav }) {
             ? (pending.kind === 'create'
               ? t('Your plan is ready')
               : t(pending.changes?.length === 1 ? '{0} suggestion for you' : '{0} suggestions for you', pending.changes?.length || 0))
-            : t('Reading your training…')}</div>
+            : job?.kind === 'meals' ? t('Planning your meals…') : t('Reading your training…')}</div>
         </div>
       </div>
       {ready ? <span className="tag acc">{t('Review')}</span> : <Icon name="chevronRight" className="chev" />}

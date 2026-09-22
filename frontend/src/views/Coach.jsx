@@ -30,7 +30,8 @@ const CATEGORY_TEXT = {
   training: ['Your logged training', 'Sets you logged in the review window — weights, reps, times, effort ratings and how long sessions took.'],
   bodyweight: ['Body weight', 'Weigh-ins from the same window, and your goal weight if you set one.'],
   profile: ['What you tell the Coach', 'Your intake answers, including any limitations or injuries you describe.'],
-  prefs: ['A few preferences', 'Your unit, your language and which effort scale you log.']
+  prefs: ['A few preferences', 'Your unit, your language and which effort scale you log.'],
+  nutrition: ['Nutrition (meal plans only)', 'Your calorie and macro targets, what you logged today, food preferences and saved foods — sent only when you ask for a meal plan.']
 }
 
 export default function Coach() {

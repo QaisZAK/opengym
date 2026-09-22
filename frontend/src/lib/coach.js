@@ -17,7 +17,7 @@ import { POLICIES } from './progression.js'
 import { t } from './i18n.js'
 
 // Bumping this re-prompts everyone: it means what we share, or who we share it with, changed.
-export const CONSENT_VERSION = 1
+export const CONSENT_VERSION = 2   // 2: adds the 'nutrition' category (meal plans)
 
 // Bounds. The whole state has to stay inside the server's 5 MB body limit, and a Coach log
 // that grows forever is exactly the kind of thing that eats it invisibly. Worst case here is
