@@ -7,7 +7,7 @@ import { useUI } from '../store/useUI.js'
 import { fmtNum, fmtDate, todayISO, isoOf, uid } from '../lib/format.js'
 import { lastBW } from '../lib/history.js'
 import { t } from '../lib/i18n.js'
-import { computeTargets, entryMacros, dayTotals, remaining, ACTIVITY } from '../lib/nutrition.js'
+import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, ACTIVITY } from '../lib/nutrition.js'
 import { localSearch } from '../lib/foodDB.js'
 import { offSearch } from '../lib/foodApi.js'
 import Icon from '../components/Icon.jsx'
@@ -35,6 +35,17 @@ const updateEntry = (iso, id, entry) => update(s => { const n = nz(s); const d =
 const delEntry = (iso, id) => update(s => { const n = nz(s); n.log[iso] = (n.log[iso] || []).filter(e => e.id !== id) })
 const upsertFood = food => update(s => { const n = nz(s); const i = n.foods.findIndex(f => f.id === food.id); if (i >= 0) n.foods[i] = food; else n.foods.push(food) })
 const saveTargets = (profile, targets) => update(s => { const n = nz(s); n.profile = profile; n.targets = targets })
+const upsertMeal = m => update(s => { const n = nz(s); const i = n.meals.findIndex(x => x.id === m.id); if (i >= 0) n.meals[i] = m; else n.meals.push(m) })
+const delMeal = id => update(s => { const n = nz(s); n.meals = n.meals.filter(m => m.id !== id) })
+const upsertRecipe = r => update(s => { const n = nz(s); const i = n.recipes.findIndex(x => x.id === r.id); if (i >= 0) n.recipes[i] = r; else n.recipes.push(r) })
+const delRecipe = id => update(s => { const n = nz(s); n.recipes = n.recipes.filter(r => r.id !== id) })
+// Log every item of a saved meal into a day slot as individual entries (so each stays editable).
+const logMeal = (m, iso, slot) => update(s => {
+  const n = nz(s); const day = (n.log[iso] = n.log[iso] || [])
+  ;(m.items || []).forEach(it => day.push({ id: uid(), meal: slot, name: it.food.name, qty: it.qty, unit: it.unit, ...entryMacros(it.food, it.qty, it.unit), source: 'meal', base: it.food }))
+})
+// A recipe behaves like a per-serving food when logging (qty = servings), so it reuses Portion.
+const recFood = r => ({ name: r.name, per: 'serving', ...recipePerServing(r), source: 'recipe' })
 
 /* ---------- labels & portion helpers ---------- */
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack']
@@ -111,12 +122,31 @@ function FoodRow({ food, onClick }) {
   )
 }
 
-function LogSheet({ meal, iso, close }) {
-  const foods = getS().nutrition?.foods || []
+function MealRow({ m, onClick }) {
+  const tot = mealMacros(m.items)
+  return <div className="item" onClick={onClick}>
+    <span className="lrow-i"><Icon name="list" /></span>
+    <div className="grow"><div className="tt">{m.name}</div><div className="ss">{fmtNum(tot.kcal)} kcal · {(m.items || []).length} {t('items')}</div></div>
+    <Icon name="plus" className="chev" />
+  </div>
+}
+function RecipeRow({ r, onClick }) {
+  const ps = recipePerServing(r)
+  return <div className="item" onClick={onClick}>
+    <span className="lrow-i"><Icon name="clipboard" /></span>
+    <div className="grow"><div className="tt">{r.name}</div><div className="ss">{fmtNum(ps.kcal)} kcal/{t('serving')} · {r.servings || 1} {t('servings')}</div></div>
+    <Icon name="plus" className="chev" />
+  </div>
+}
+
+function LogSheet({ meal, iso, onPick, close }) {
+  const n = getS().nutrition || {}
+  const foods = n.foods || [], meals = n.meals || [], recipes = n.recipes || []
   const [q, setQ] = useState('')
   const [off, setOff] = useState([])
   const [loading, setLoading] = useState(false)
   const local = localSearch(q, foods)
+  const pick = onPick || (f => openPortion(f, meal, iso))
   useEffect(() => {
     setOff([])
     const ql = q.trim()
@@ -127,16 +157,23 @@ function LogSheet({ meal, iso, close }) {
     return () => { live = false; clearTimeout(id) }
   }, [q])
   return <>
-    <h3>{t('Add to {0}', mealLabel(meal))}</h3>
-    <div className="row" style={{ gap: 8, margin: '4px 0 10px' }}>
+    <h3>{onPick ? t('Add food') : t('Add to {0}', mealLabel(meal))}</h3>
+    {!onPick && <div className="row" style={{ gap: 8, margin: '4px 0 10px' }}>
       <Button size="sm" icon="plus" onClick={() => openQuickAdd(meal, iso)}>{t('Quick add')}</Button>
       <Button size="sm" icon="pencil" onClick={() => openCustomFood(meal, iso)}>{t('New food')}</Button>
-    </div>
+    </div>}
     <SearchField value={q} onChange={e => setQ(e.target.value)} onClear={() => setQ('')} placeholder={t('Search foods…')} />
+    {!onPick && !q.trim() && (meals.length + recipes.length > 0) && <>
+      <div className="sect-t" style={{ padding: '12px 2px 2px' }}>{t('Saved meals')}</div>
+      <div className="list">
+        {meals.map(m => <MealRow key={m.id} m={m} onClick={() => { logMeal(m, iso, meal); close(); toast(t('Logged {0}', m.name)) }} />)}
+        {recipes.map(r => <RecipeRow key={r.id} r={r} onClick={() => openPortion(recFood(r), meal, iso)} />)}
+      </div>
+    </>}
     <div className="list" style={{ marginTop: 10 }}>
-      {local.map(f => <FoodRow key={f.id || f.code || f.name} food={f} onClick={() => openPortion(f, meal, iso)} />)}
+      {local.map(f => <FoodRow key={f.id || f.code || f.name} food={f} onClick={() => pick(f)} />)}
       {off.length > 0 && <div className="sect-t" style={{ padding: '10px 2px 2px' }}>Open Food Facts</div>}
-      {off.map(f => <FoodRow key={'off' + (f.code || f.name)} food={f} onClick={() => openPortion(f, meal, iso)} />)}
+      {off.map(f => <FoodRow key={'off' + (f.code || f.name)} food={f} onClick={() => pick(f)} />)}
       {loading && <div className="muted small" style={{ padding: 8 }}>{t('Searching…')}</div>}
       {!loading && !local.length && !off.length && q.trim().length >= 2 &&
         <div className="muted small" style={{ padding: 8 }}>{t('No matches — try Quick add or New food.')}</div>}
@@ -145,20 +182,21 @@ function LogSheet({ meal, iso, close }) {
   </>
 }
 
-function Portion({ food, meal, iso, editId, initQty, initUnit, close }) {
+function Portion({ food, meal, iso, editId, initQty, initUnit, onAdd, close }) {
   const opts = unitOptions(food)
   const [unit, setUnit] = useState(initUnit && opts.some(o => o.value === initUnit) ? initUnit : opts[0].value)
   const [qty, setQty] = useState(initQty ?? defaultQty(food, initUnit || opts[0].value))
   const m = entryMacros(food, qty, unit)
   const save = () => {
     if (!(qty > 0)) { toast(t('Enter a portion')); return }
+    if (onAdd) { onAdd({ food: { ...baseOf(food), name: food.name }, qty: +qty, unit }); close(); return } // into a meal/recipe, not the day
     const entry = { meal, name: food.name, qty: +qty, unit, ...m, source: food.source || 'custom', base: baseOf(food) }
     if (editId) updateEntry(iso, editId, entry); else addEntry(iso, entry)
     close(); toast(t('Logged'))
   }
   return <>
     <h3>{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 8 }}>{t('estimate')}</span>}</h3>
-    <div className="muted small" style={{ marginBottom: 12 }}>{t('Into {0}', mealLabel(meal))}</div>
+    {!onAdd && <div className="muted small" style={{ marginBottom: 12 }}>{t('Into {0}', mealLabel(meal))}</div>}
     {opts.length > 1 && <div style={{ marginBottom: 12 }}><Segmented options={opts} value={unit} onChange={u => { setUnit(u); setQty(defaultQty(food, u)) }} /></div>}
     <div className="row cfgrow" style={{ marginBottom: 14 }}>
       <Stepper label={t('Amount')} value={qty} step={unit === 'serving' ? 1 : 10} decimal onChange={setQty} unit={unit === 'serving' ? '' : unit} />
@@ -169,7 +207,7 @@ function Portion({ food, meal, iso, editId, initQty, initUnit, close }) {
       <div className="tile"><div className="l">{t('Carbs')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fmtNum(m.carbs)}</div></div>
       <div className="tile"><div className="l">{t('Fat')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fmtNum(m.fat)}</div></div>
     </div>
-    <Button variant="primary" onClick={save}>{editId ? t('Save') : t('Add to log')}</Button>
+    <Button variant="primary" onClick={save}>{editId ? t('Save') : onAdd ? t('Add') : t('Add to log')}</Button>
   </>
 }
 
@@ -302,9 +340,86 @@ function openEntry(iso, e) {
 }
 export const openTargets = () => ui().openSheet(close => <Targets close={close} />)
 const openLog = (meal, iso) => ui().openSheet(close => <LogSheet meal={meal} iso={iso} close={close} />)
-const openPortion = (food, meal, iso, opts = {}) => ui().openSheet(close => <Portion food={food} meal={meal} iso={iso} editId={opts.editId} initQty={opts.initQty} initUnit={opts.initUnit} close={close} />)
+const openPortion = (food, meal, iso, opts = {}) => ui().openSheet(close => <Portion food={food} meal={meal} iso={iso} editId={opts.editId} initQty={opts.initQty} initUnit={opts.initUnit} onAdd={opts.onAdd} close={close} />)
 const openQuickAdd = (meal, iso) => ui().openSheet(close => <QuickAdd meal={meal} iso={iso} close={close} />)
 const openCustomFood = (meal, iso) => ui().openSheet(close => <CustomFood meal={meal} iso={iso} close={close} />)
+
+function ItemList({ items, setItems }) {
+  return <div className="list" style={{ margin: '12px 0' }}>
+    {items.map((it, i) => <div key={i} className="item">
+      <div className="grow"><div className="tt">{it.food.name}</div><div className="ss">{portionLabel(it)}</div></div>
+      <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => setItems(x => x.filter((_, j) => j !== i))} aria-label={t('Remove')}><Icon name="trash" /></button>
+    </div>)}
+    {!items.length && <div className="muted small" style={{ padding: 8 }}>{t('No foods yet.')}</div>}
+  </div>
+}
+
+function MealBuilder({ existing, close }) {
+  const [name, setName] = useState(existing?.name || '')
+  const [items, setItems] = useState(existing?.items || [])
+  const tot = mealMacros(items)
+  const addFood = () => openFoodPicker(food => openPortion(food, null, null, { onAdd: it => setItems(x => [...x, it]) }))
+  const save = () => {
+    if (!name.trim()) { toast(t('Give it a name')); return }
+    if (!items.length) { toast(t('Add at least one food')); return }
+    upsertMeal({ id: existing?.id || 'm' + uid(), name: name.trim(), items }); close(); toast(t('Meal saved'))
+  }
+  return <>
+    <h3>{existing ? t('Edit meal') : t('New meal')}</h3>
+    <input className="field" placeholder={t('Meal name, e.g. My usual breakfast')} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
+    <ItemList items={items} setItems={setItems} />
+    <Button icon="plus" onClick={addFood}>{t('Add food')}</Button>
+    <div className="muted small" style={{ margin: '10px 2px' }}>{fmtNum(tot.kcal)} kcal · P {fmtNum(tot.protein)} · C {fmtNum(tot.carbs)} · F {fmtNum(tot.fat)}</div>
+    <Button variant="primary" onClick={save}>{t('Save meal')}</Button>
+    {existing && <><div style={{ height: 8 }} /><Button variant="danger" icon="trash" onClick={() => { delMeal(existing.id); close(); toast(t('Meal deleted')) }}>{t('Delete meal')}</Button></>}
+  </>
+}
+
+function RecipeBuilder({ existing, close }) {
+  const [name, setName] = useState(existing?.name || '')
+  const [servings, setServings] = useState(existing?.servings || 4)
+  const [items, setItems] = useState(existing?.items || [])
+  const ps = recipePerServing({ servings, items })
+  const addFood = () => openFoodPicker(food => openPortion(food, null, null, { onAdd: it => setItems(x => [...x, it]) }))
+  const save = () => {
+    if (!name.trim()) { toast(t('Give it a name')); return }
+    if (!items.length) { toast(t('Add at least one ingredient')); return }
+    upsertRecipe({ id: existing?.id || 'r' + uid(), name: name.trim(), servings: Math.max(1, Math.round(servings) || 1), items }); close(); toast(t('Recipe saved'))
+  }
+  return <>
+    <h3>{existing ? t('Edit recipe') : t('New recipe')}</h3>
+    <input className="field" placeholder={t('Recipe name')} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
+    <div className="row cfgrow" style={{ margin: '12px 0' }}><Stepper label={t('Servings')} value={servings} step={1} decimal={false} onChange={setServings} /></div>
+    <ItemList items={items} setItems={setItems} />
+    <Button icon="plus" onClick={addFood}>{t('Add ingredient')}</Button>
+    <div className="muted small" style={{ margin: '10px 2px' }}>{t('Per serving:')} {fmtNum(ps.kcal)} kcal · P {fmtNum(ps.protein)} · C {fmtNum(ps.carbs)} · F {fmtNum(ps.fat)}</div>
+    <Button variant="primary" onClick={save}>{t('Save recipe')}</Button>
+    {existing && <><div style={{ height: 8 }} /><Button variant="danger" icon="trash" onClick={() => { delRecipe(existing.id); close(); toast(t('Recipe deleted')) }}>{t('Delete recipe')}</Button></>}
+  </>
+}
+
+function MealsManager({ close }) {
+  const n = getS().nutrition || {}
+  const meals = n.meals || [], recipes = n.recipes || []
+  return <>
+    <h3>{t('Saved meals & recipes')}</h3>
+    <div className="muted small" style={{ marginBottom: 10 }}>{t('Build a meal or recipe once, then log it in a tap from any day.')}</div>
+    <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+      <Button size="sm" icon="plus" onClick={() => { close(); openMealBuilder() }}>{t('New meal')}</Button>
+      <Button size="sm" icon="plus" onClick={() => { close(); openRecipeBuilder() }}>{t('New recipe')}</Button>
+    </div>
+    <div className="list">
+      {meals.map(m => <MealRow key={m.id} m={m} onClick={() => { close(); openMealBuilder(m) }} />)}
+      {recipes.map(r => <RecipeRow key={r.id} r={r} onClick={() => { close(); openRecipeBuilder(r) }} />)}
+      {!meals.length && !recipes.length && <div className="muted small" style={{ padding: 8 }}>{t('Nothing saved yet.')}</div>}
+    </div>
+  </>
+}
+
+const openFoodPicker = onPick => ui().openSheet(close => <LogSheet onPick={onPick} close={close} />)
+const openMeals = () => ui().openSheet(close => <MealsManager close={close} />)
+const openMealBuilder = existing => ui().openSheet(close => <MealBuilder existing={existing} close={close} />)
+const openRecipeBuilder = existing => ui().openSheet(close => <RecipeBuilder existing={existing} close={close} />)
 
 /* ============================ view ============================ */
 export default function Nutrition() {
@@ -320,7 +435,10 @@ export default function Nutrition() {
   return <>
     <div className="hdr">
       <div><h1>{t('Nutrition')}</h1><div className="sub">{t('Calories & macros')}</div></div>
-      <button className="iconbtn" onClick={openTargets} aria-label={t('Goals & targets')}><Icon name="target" /></button>
+      <div className="row" style={{ gap: 6 }}>
+        <button className="iconbtn" onClick={openMeals} aria-label={t('Saved meals')}><Icon name="clipboard" /></button>
+        <button className="iconbtn" onClick={openTargets} aria-label={t('Goals & targets')}><Icon name="target" /></button>
+      </div>
     </div>
 
     <div className="row between" style={{ marginBottom: 14 }}>

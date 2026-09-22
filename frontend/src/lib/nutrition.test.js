@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeTargets, entryMacros, dayTotals, remaining, ACTIVITY, GOAL } from './nutrition.js'
+import { computeTargets, entryMacros, dayTotals, remaining, mealMacros, recipePerServing, ACTIVITY, GOAL } from './nutrition.js'
 
 describe('computeTargets (Mifflin-St Jeor)', () => {
   it('matches a hand-computed male maintenance target', () => {
@@ -121,5 +121,34 @@ describe('remaining', () => {
     const targets = { kcal: 2000, protein: 150, carbs: 200, fat: 60 }
     expect(remaining(targets, { kcal: 1800, protein: 120, carbs: 210, fat: 40 }))
       .toEqual({ kcal: 200, protein: 30, carbs: -10, fat: 20 })
+  })
+})
+
+describe('mealMacros', () => {
+  const apple = { per: '100g', kcal: 52, protein: 0.3, carbs: 14, fat: 0.2 }
+  const bar = { per: 'serving', kcal: 200, protein: 8, carbs: 30, fat: 5 }
+  it('sums the macros of each portioned item in the meal', () => {
+    expect(mealMacros([
+      { food: apple, qty: 150, unit: 'g' },
+      { food: bar, qty: 2, unit: 'serving' }
+    ])).toEqual({ kcal: 478, protein: 16.5, carbs: 81, fat: 10.3 })
+  })
+  it('is all zeros for an empty or missing meal', () => {
+    expect(mealMacros([])).toEqual({ kcal: 0, protein: 0, carbs: 0, fat: 0 })
+    expect(mealMacros(undefined)).toEqual({ kcal: 0, protein: 0, carbs: 0, fat: 0 })
+  })
+})
+
+describe('recipePerServing', () => {
+  const food = { per: '100g', kcal: 400, protein: 20, carbs: 50, fat: 10 }
+  it('divides the total by the number of servings', () => {
+    // 200 g -> 800/40/100/20 total, over 4 servings -> 200/10/25/5
+    expect(recipePerServing({ servings: 4, items: [{ food, qty: 200, unit: 'g' }] }))
+      .toEqual({ kcal: 200, protein: 10, carbs: 25, fat: 5 })
+  })
+  it('treats a missing or zero serving count as 1', () => {
+    expect(recipePerServing({ items: [{ food, qty: 100, unit: 'g' }] }))
+      .toEqual({ kcal: 400, protein: 20, carbs: 50, fat: 10 })
+    expect(recipePerServing({ servings: 0, items: [{ food, qty: 100, unit: 'g' }] }).kcal).toBe(400)
   })
 })

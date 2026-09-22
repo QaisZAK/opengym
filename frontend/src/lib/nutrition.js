@@ -55,6 +55,19 @@ export function dayTotals(entries) {
   return { kcal: Math.round(sum.kcal), protein: r1(sum.protein), carbs: r1(sum.carbs), fat: r1(sum.fat) }
 }
 
+// Total macros of a saved meal — a list of { food, qty, unit } items (each food carries its own
+// per-100g/serving macros). Reuses the per-entry scaling and the day-total summing.
+export function mealMacros(items) {
+  return dayTotals((items || []).map(it => entryMacros(it.food, it.qty, it.unit)))
+}
+
+// Per-serving macros of a recipe (its items divided by the serving count; missing/zero => 1).
+export function recipePerServing(recipe) {
+  const n = Math.max(1, Number(recipe?.servings) || 1)
+  const tot = mealMacros(recipe?.items)
+  return { kcal: Math.round(tot.kcal / n), protein: r1(tot.protein / n), carbs: r1(tot.carbs / n), fat: r1(tot.fat / n) }
+}
+
 // What's left against target (negative = over).
 export function remaining(targets, totals) {
   return {
