@@ -114,6 +114,15 @@ const P = {
   info: <><circle cx="12" cy="12" r="8.2" /><path d="M12 11v5.4" /><circle cx="12" cy="7.9" r=".9" fill="currentColor" stroke="none" /></>,
   barcode: <path d="M4 6.5v11M6.6 6.5v11M9.2 6.5v8M9.2 16v1.5M11.8 6.5v11M14.4 6.5v8M14.4 16v1.5M17 6.5v11M20 6.5v11" />,
   water: <path d="M12 3.6c3.2 3.8 5.4 6.9 5.4 9.8a5.4 5.4 0 0 1-10.8 0c0-2.9 2.2-6 5.4-9.8Z" />,
+  /* ---- drinks (water tracker) ---- */
+  glass: <><path d="M7 4.5h10l-1.1 14.2a1.3 1.3 0 0 1-1.3 1.2H9.4a1.3 1.3 0 0 1-1.3-1.2Z" /><path d="M7.6 9.5h8.8" /></>,
+  bottle: <><rect x="10" y="3" width="4" height="2.4" rx=".5" /><path d="M10 5.4c0 1.3-1.7 1.9-1.7 3.7V19a1.5 1.5 0 0 0 1.5 1.5h4.4A1.5 1.5 0 0 0 15.7 19V9.1c0-1.8-1.7-2.4-1.7-3.7" /><path d="M8.4 12.2h7.2" /></>,
+  bottleBaby: <><path d="M10.5 3.4c-.3.9.4 1.5 1.5 1.5s1.8-.6 1.5-1.5" /><rect x="9.3" y="4.9" width="5.4" height="2" rx="1" /><path d="M9.7 6.9h4.6v11.2a2 2 0 0 1-2 2h-.6a2 2 0 0 1-2-2Z" /><path d="M12.6 9.6h1.3M12.6 12h1.3M12.6 14.4h1.3" /></>,
+  bottleLarge: <><rect x="9.8" y="2.8" width="4.4" height="2.2" rx=".5" /><path d="M9.8 5c0 1.5-2.1 2.1-2.1 4.4V19a1.6 1.6 0 0 0 1.6 1.6h5.4A1.6 1.6 0 0 0 16.3 19V9.4c0-2.3-2.1-2.9-2.1-4.4" /><path d="M7.9 11.5h8.4M7.9 15h8.4" /></>,
+  coffee: <><path d="M5.6 8.6h8.8v5.2a4 4 0 0 1-4 4H9.6a4 4 0 0 1-4-4Z" /><path d="M14.4 9.6h2.1a2.1 2.1 0 0 1 0 4.2h-2.1" /><path d="M8 3.6c-.6.8-.6 1.6 0 2.4M11 3.6c-.6.8-.6 1.6 0 2.4" /></>,
+  tea: <><path d="M6 8.8h8.4v4a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4Z" /><path d="M14.4 9.6h1.8a1.8 1.8 0 0 1 0 3.6h-1.8" /><path d="M4.8 19.2h11.2" /><path d="M9.4 4.6c-.5.7-.5 1.4 0 2.1" /></>,
+  soda: <><rect x="7.6" y="5" width="8.8" height="15" rx="2" /><path d="M9.2 5V3.6h5.6V5" /><path d="M8.9 8.6h6.2" /></>,
+  energy: <><rect x="7.6" y="5" width="8.8" height="15" rx="2" /><path d="M9.2 5V3.6h5.6V5" /><path d="M12.6 8.4 10.4 13h2.4l-.6 3.4 2.2-4.8h-2.4Z" /></>,
 }
 
 // A few keys are aliases so call sites can say what they mean.

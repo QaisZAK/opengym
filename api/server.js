@@ -170,7 +170,8 @@ setInterval(() => {
     if ((wr.from && now.hhmm < wr.from) || (wr.to && now.hhmm > wr.to)) continue;  // outside the window
     const water = S.nutrition.water;
     const goal = water.goalMl || 0;
-    const drank = (water.log && water.log[now.date]) || 0;
+    const day = water.log && water.log[now.date];              // entry array now, or an old plain ml number
+    const drank = Array.isArray(day) ? day.reduce((a, e) => a + (+e.ml || 0), 0) : (+day || 0);
     if (goal > 0 && drank >= goal) continue;                   // already hit today's goal
     const every = Math.max(30, wr.everyMin || 120) * 60000;
     if (user.lastWaterPush && Date.now() - user.lastWaterPush < every) continue;

@@ -1,5 +1,6 @@
-// Water tracking — its own tab/module. Data lives under nutrition.water (synced + backed up like
-// everything else); this view owns it end to end so it works whether or not calorie tracking is on.
+// Water tracking — its own tab/module. Logs typed drinks (water bottles, coffee, tea, soda,
+// energy…), each contributing hydration by its own factor and tracking caffeine. Data lives under
+// nutrition.water (synced + backed up); this view owns it end to end.
 import { useState } from 'react'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
@@ -7,6 +8,7 @@ import { fmtNum, fmtDate, todayISO, isoOf, localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import Icon from '../components/Icon.jsx'
 import { Button, Stepper, Switch } from '../components/ui.jsx'
+import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater } from '../lib/water.js'
 
 const getS = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -14,7 +16,6 @@ const ui = () => useUI.getState()
 const toast = m => ui().toast(m)
 const shift = (iso, d) => { const dt = new Date(iso + 'T12:00:00'); dt.setDate(dt.getDate() + d); return isoOf(dt) }
 
-// Fill the water namespace defensively (the store overlay is shallow, and older states predate it).
 function ensureWater(s) {
   const n = s.nutrition = s.nutrition || {}
   const w = n.water = n.water || {}
@@ -22,13 +23,19 @@ function ensureWater(s) {
   w.reminder = w.reminder || { on: false, everyMin: 120, from: '09:00', to: '22:00', tz: null }
   return w
 }
-const addWater = (iso, ml) => update(s => { const w = ensureWater(s); w.log[iso] = Math.max(0, (w.log[iso] || 0) + ml) })
+// Entries are stored chronologically; remove by position (no per-entry id needed).
+const logDrink = (iso, entry) => update(s => { const w = ensureWater(s); const day = normalizeDay(w.log[iso]).slice(); day.push(entry); w.log[iso] = day })
+const removeDrinkAt = (iso, i) => update(s => { const w = ensureWater(s); const day = normalizeDay(w.log[iso]).slice(); day.splice(i, 1); w.log[iso] = day })
 const setWaterGoal = ml => update(s => { const w = ensureWater(s); w.goalMl = Math.max(0, Math.round(ml) || 0) })
 const setWaterReminder = patch => update(s => { const w = ensureWater(s); w.reminder = { ...w.reminder, ...patch, tz: localTZ() } })
 
-function WaterRing({ ml, goal }) {
+const TILE_DRINKS = ['glass', 'bottle_baby', 'bottle_s', 'bottle_l', 'coffee', 'tea', 'soda', 'energy'].map(drinkByKey)
+const tileStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '12px 4px', background: 'var(--surface-2)', border: 'none', borderRadius: 12, cursor: 'pointer', color: 'var(--label)' }
+const iconTile = { width: 40, height: 40, borderRadius: 11, background: 'var(--surface-3)', display: 'grid', placeItems: 'center', color: 'var(--teal)', fontSize: 20 }
+
+function WaterRing({ hydration, goal }) {
   const R = 54, C = 2 * Math.PI * R
-  const pct = goal > 0 ? ml / goal : 0
+  const pct = goal > 0 ? hydration / goal : 0
   const off = C * (1 - Math.min(1, Math.max(0, pct)))
   return (
     <div style={{ position: 'relative', width: 148, height: 148, margin: '4px auto 0' }}>
@@ -37,22 +44,41 @@ function WaterRing({ ml, goal }) {
         <circle cx="64" cy="64" r={R} fill="none" stroke="var(--teal)" strokeWidth="11" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={off} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{fmtNum(ml)}</div>
+        <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{fmtNum(hydration)}</div>
         <div className="small dim" style={{ marginTop: 3 }}>/ {fmtNum(goal)} ml</div>
       </div>
     </div>
   )
 }
 
-function WaterAdd({ iso, close }) {
-  const [ml, setMl] = useState(300)
+function DrinkTile({ drink, onClick }) {
+  return <button onClick={onClick} style={tileStyle}>
+    <span style={iconTile}><Icon name={drink.icon} /></span>
+    <span className="small" style={{ fontWeight: 600, lineHeight: 1.1, textAlign: 'center' }}>{t(drink.name)}</span>
+    <span className="dim" style={{ fontSize: 11 }}>{drink.ml} ml</span>
+  </button>
+}
+
+function DrinkSheet({ iso, close }) {
+  const [drink, setDrink] = useState(DRINKS[0])
+  const [ml, setMl] = useState(DRINKS[0].ml)
+  const hyd = Math.round(ml * drink.hydration)
+  const caf = Math.round((ml / 100) * drink.caf)
   return <>
-    <h3>{t('Add water')}</h3>
-    <div className="row cfgrow" style={{ margin: '8px 0 14px' }}><Stepper label={t('Millilitres')} value={ml} step={50} decimal={false} onChange={setMl} unit="ml" /></div>
-    <Button variant="primary" onClick={() => { const n = Math.round(ml); if (n > 0) { addWater(iso, n); close(); toast(t('Added {0} ml', n)) } }}>{t('Add')}</Button>
+    <h3>{t('Add a drink')}</h3>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+      {DRINKS.map(d => <button key={d.key} onClick={() => { setDrink(d); setMl(d.ml) }}
+        style={{ ...tileStyle, outline: d.key === drink.key ? '2px solid var(--teal)' : 'none' }}>
+        <span style={iconTile}><Icon name={d.icon} /></span>
+        <span className="small" style={{ fontWeight: 600, lineHeight: 1.1, textAlign: 'center' }}>{t(d.name)}</span>
+      </button>)}
+    </div>
+    <div className="row cfgrow" style={{ marginBottom: 10 }}><Stepper label={t('Millilitres')} value={ml} step={50} decimal={false} onChange={setMl} unit="ml" /></div>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('{0} ml hydration', hyd)}{caf ? ` · ${caf} mg ${t('caffeine')}` : ''}</div>
+    <Button variant="primary" onClick={() => { const n = Math.round(ml); if (n > 0) { logDrink(iso, mkEntry(drink, n)); close(); toast(t('Added {0}', t(drink.name))) } }}>{t('Add')}</Button>
   </>
 }
-const openWaterAdd = iso => ui().openSheet(close => <WaterAdd iso={iso} close={close} />)
+const openDrinkSheet = iso => ui().openSheet(close => <DrinkSheet iso={iso} close={close} />)
 
 function WaterSettings({ close }) {
   const w = getS().nutrition?.water || {}, r = w.reminder || {}
@@ -88,8 +114,9 @@ export default function Water() {
   const S = useStore(s => s.S)
   const w = S.nutrition?.water || {}
   const [iso, setIso] = useState(todayISO())
-  const ml = (w.log && w.log[iso]) || 0
   const goal = w.goalMl || 2000
+  const entries = normalizeDay(w.log[iso])
+  const d = dayWater(entries)
   const days = []
   for (let i = 6; i >= 0; i--) days.push(shift(iso, -i))
   return <>
@@ -105,28 +132,49 @@ export default function Water() {
     </div>
 
     <div className="card">
-      <WaterRing ml={ml} goal={goal} />
-      <div className="row between" style={{ margin: '10px 2px 14px' }}>
-        <span className="muted small">{ml >= goal ? t('Goal reached — nice.') : t('{0} ml to go', fmtNum(Math.max(0, goal - ml)))}</span>
-        <button className="chip" onClick={openWaterSettings}>{t('Goal: {0} ml', fmtNum(goal))}</button>
+      <WaterRing hydration={d.hydration} goal={goal} />
+      <div className="row" style={{ justifyContent: 'center', gap: 22, margin: '12px 0 14px' }}>
+        <div style={{ textAlign: 'center' }}><div className="stat-v" style={{ fontSize: 18 }}>{fmtNum(d.ml)}</div><div className="small dim">{t('ml total')}</div></div>
+        <div style={{ textAlign: 'center' }}><div className="stat-v" style={{ fontSize: 18 }}>{fmtNum(d.caffeine)}</div><div className="small dim">{t('mg caffeine')}</div></div>
       </div>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <Button size="sm" icon="plus" onClick={() => addWater(iso, 250)}>250 ml</Button>
-        <Button size="sm" icon="plus" onClick={() => addWater(iso, 500)}>500 ml</Button>
-        <Button size="sm" onClick={() => openWaterAdd(iso)}>{t('Custom')}</Button>
-        {ml > 0 && <Button size="sm" variant="ghost" className="dim" icon="reset" onClick={() => addWater(iso, -250)}>{t('Undo')}</Button>}
+      <div className="row between">
+        <span className="muted small">{d.hydration >= goal ? t('Goal reached — nice.') : t('{0} ml to go', fmtNum(Math.max(0, goal - d.hydration)))}</span>
+        <button className="chip" onClick={openWaterSettings}>{t('Goal: {0} ml', fmtNum(goal))}</button>
       </div>
     </div>
 
     <div className="card">
+      <h2 style={{ marginBottom: 10 }}>{t('Add a drink')}</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        {TILE_DRINKS.map(dr => <DrinkTile key={dr.key} drink={dr} onClick={() => { logDrink(iso, mkEntry(dr, dr.ml)); toast(t('Added {0}', t(dr.name))) }} />)}
+        <button onClick={() => openDrinkSheet(iso)} style={tileStyle}>
+          <span style={iconTile}><Icon name="plus" /></span>
+          <span className="small" style={{ fontWeight: 600 }}>{t('More')}</span>
+          <span className="dim" style={{ fontSize: 11 }}>{t('custom')}</span>
+        </button>
+      </div>
+    </div>
+
+    {entries.length > 0 && <div className="card">
+      <h2 style={{ marginBottom: 6 }}>{t('Today’s drinks')}</h2>
+      <div className="list">
+        {entries.map((e, i) => <div key={i} className="item">
+          <span className="lrow-i" style={{ color: 'var(--teal)' }}><Icon name={e.icon || 'glass'} /></span>
+          <div className="grow"><div className="tt">{t(e.name || 'Water')}</div><div className="ss">{fmtNum(e.ml)} ml{e.caf ? ` · ${Math.round((e.ml / 100) * e.caf)} mg` : ''}</div></div>
+          <button className="iconbtn" style={{ color: 'var(--red)' }} onClick={() => removeDrinkAt(iso, i)} aria-label={t('Remove')}><Icon name="trash" /></button>
+        </div>)}
+      </div>
+    </div>}
+
+    <div className="card">
       <h2>{t('Last 7 days')}</h2>
-      {days.map(d => {
-        const v = (w.log && w.log[d]) || 0
-        const p = goal > 0 ? Math.min(100, Math.round((v / goal) * 100)) : 0
-        return <div key={d} className="mrow">
-          <span className="nm" style={{ minWidth: 70 }}>{d === todayISO() ? t('Today') : fmtDate(d)}</span>
+      {days.map(day => {
+        const dw = dayWater(w.log[day])
+        const p = goal > 0 ? Math.min(100, Math.round((dw.hydration / goal) * 100)) : 0
+        return <div key={day} className="mrow">
+          <span className="nm" style={{ minWidth: 70 }}>{day === todayISO() ? t('Today') : fmtDate(day)}</span>
           <span className="bar"><i style={{ width: p + '%', background: 'var(--teal)' }} /></span>
-          <span className="v">{fmtNum(v)} ml</span>
+          <span className="v">{fmtNum(dw.hydration)} ml</span>
         </div>
       })}
     </div>
