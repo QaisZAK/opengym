@@ -19,7 +19,18 @@ export const DEF = {
   // AI Coach (issue: AI enablement). null until the profile opts in — a null namespace is the
   // same app it was before the feature existed, which is what Epic F asks for. Shape and
   // bounds live in lib/coach.js.
-  coach: null
+  coach: null,
+  // Nutrition (calorie & macro tracking). Off by default per profile — nutrition.on gates the tab
+  // and screens, so a profile that never turns it on is byte-for-byte the app it was before. The
+  // store overlay is shallow (top-level only), so helpers read sub-fields defensively: an older
+  // saved `nutrition` won't be backfilled with sub-keys added here later. Shape lives in lib/nutrition.js.
+  nutrition: {
+    on: false,
+    profile: { sex: null, age: null, heightCm: null, activity: 'moderate', goal: 'maintain' },
+    targets: { kcal: null, protein: null, carbs: null, fat: null, manual: false },
+    log: {}, foods: [], meals: [], recipes: [],
+    water: { goalMl: 2000, log: {}, reminder: { on: false, everyMin: 120, from: '09:00', to: '22:00', tz: null } }
+  }
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 

@@ -17,6 +17,7 @@ import {
   effortHistogram, isHardSet, HARD_RIR
 } from '../lib/effort.js'
 import { Button, Segmented, SelectRow } from '../components/ui.jsx'
+import { dayTotals } from '../lib/nutrition.js'
 
 // Which muscles the training in a window actually hit — and, the point of the card,
 // which ones it keeps missing. Shading is relative within the window (lib/muscles.js).
@@ -126,6 +127,31 @@ function EffortCard({ S }) {
         {t('Most working sets belong close to failure without living there — half at the floor and half at the top average out to a healthy-looking middle.')}
       </div>
     </>}
+  </div>
+}
+
+// Calorie / protein trend, alongside the body-weight chart. Only shown once nutrition is on;
+// each point is one logged day, drawn against the daily target as the goal line.
+function NutritionCard({ S }) {
+  const [range, setRange] = useState(90)
+  const [metric, setMetric] = useState('kcal')
+  const now = Date.now()
+  const log = S.nutrition?.log || {}
+  const tg = S.nutrition?.targets || {}
+  const pts = Object.keys(log)
+    .filter(d => (log[d] || []).length)
+    .map(d => { const tot = dayTotals(log[d]); return { t: new Date(d + 'T12:00:00').getTime(), y: metric === 'kcal' ? tot.kcal : tot.protein, d } })
+    .filter(p => range === 0 || p.t > now - range * 86400000)
+    .sort((a, b) => a.t - b.t)
+  const goal = metric === 'kcal' ? (tg.kcal || null) : (tg.protein || null)
+  return <div className="card">
+    <h2>{t('Nutrition')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {metric === 'kcal' ? t('calories') : t('protein')}</span></h2>
+    <Segmented className="seg-range" value={metric} onChange={setMetric} options={[{ value: 'kcal', label: t('Calories') }, { value: 'protein', label: t('Protein') }]} />
+    <div style={{ height: 8 }} />
+    <Segmented className="seg-range" value={range} onChange={setRange}
+      options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
+    {pts.length ? <div className="chart"><LineChart points={pts} h={160} unit={metric === 'kcal' ? 'kcal' : 'g'} goal={goal} color={metric === 'kcal' ? 'var(--orange)' : 'var(--blue)'} /></div>
+      : <div className="muted small" style={{ marginTop: 10 }}>{t('Log some meals to see your trend.')}</div>}
   </div>
 }
 
@@ -255,6 +281,8 @@ export default function Stats() {
         </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
       </div>
     </div>
+
+    {S.nutrition?.on && <NutritionCard S={S} />}
 
     {S.workouts.length > 0 && <>
       <div className="row between" style={{ marginBottom: 10 }}>

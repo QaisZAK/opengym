@@ -12,6 +12,7 @@ import { DEMO, REPO } from '../lib/demo.js'
 import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
 import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
 import { coachAvailable, hasConsent } from '../lib/coach.js'
+import { openTargets } from './Nutrition.jsx'
 import { forgetCoach } from '../lib/coach-api.js'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
@@ -152,6 +153,19 @@ export default function Settings() {
           accessory="chevron" onClick={() => nav('/coach')} />
       </Section>
     )}
+
+    {/* ---------- nutrition (off by default; adds the Food tab) ---------- */}
+    <Section title={t('Nutrition')} footer={S.nutrition?.on
+      ? t('Adds the Food tab — log meals and track calories & macros against your targets.')
+      : t('Track calories and macros. Off by default — turn it on to add the Food tab.')}>
+      <Row icon="flame" iconTint="var(--orange)" title={t('Nutrition tracking')}>
+        <Switch checked={!!S.nutrition?.on} onChange={v => update(s => { if (!s.nutrition) s.nutrition = JSON.parse(JSON.stringify(DEF.nutrition)); s.nutrition.on = v })} />
+      </Row>
+      {S.nutrition?.on && <>
+        <Row icon="target" iconTint="var(--purple)" title={t('Goals & targets')} accessory="chevron" onClick={openTargets} />
+        <Row icon="chart" iconTint="var(--acc)" title={t('Open nutrition')} accessory="chevron" onClick={() => nav('/nutrition')} />
+      </>}
+    </Section>
 
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 
