@@ -19,6 +19,9 @@ import {
 import { Button, Segmented, SelectRow } from '../components/ui.jsx'
 import { dayTotals } from '../lib/nutrition.js'
 import { recordsOf } from '../lib/records.js'
+import { workoutsCSV, bodyweightCSV, nutritionCSV } from '../lib/export.js'
+import { MOBILE, shareExport } from '../lib/mobile.js'
+import { useUI } from '../store/useUI.js'
 
 // Which muscles the training in a window actually hit — and, the point of the card,
 // which ones it keeps missing. Shading is relative within the window (lib/muscles.js).
@@ -157,6 +160,49 @@ function NutritionCard({ S }) {
 }
 
 // Stats = the analytics hub: all charts, progress and history live here.
+// Hand a text/image file to the user: the native build shares it, the web downloads it.
+async function saveFile(blobOrText, name, type) {
+  if (MOBILE && typeof blobOrText === 'string') { try { await shareExport(blobOrText, name) } catch { /* dismissed */ } return }
+  const blob = typeof blobOrText === 'string' ? new Blob([blobOrText], { type }) : blobOrText
+  const file = new File([blob], name, { type })
+  if (navigator.canShare?.({ files: [file] }) && type.startsWith('image/')) { try { await navigator.share({ files: [file] }); return } catch { /* fall back to download */ } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href)
+}
+
+// A 1080×1080 summary card (totals + top lifts) drawn on a canvas, for sharing.
+function summaryImage(S) {
+  const c = document.createElement('canvas'); c.width = c.height = 1080
+  const g = c.getContext('2d'), acc = getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || '#a3e635'
+  g.fillStyle = '#0c0e12'; g.fillRect(0, 0, 1080, 1080)
+  g.fillStyle = acc; g.font = '700 64px system-ui, sans-serif'; g.fillText('openGym', 80, 150)
+  g.fillStyle = '#9ca3af'; g.font = '400 36px system-ui, sans-serif'; g.fillText(fmtDate(todayISO(), true), 80, 205)
+  const stat = (x, y, v, l) => { g.fillStyle = '#fff'; g.font = '700 110px system-ui, sans-serif'; g.fillText(String(v), x, y); g.fillStyle = '#9ca3af'; g.font = '400 34px system-ui, sans-serif'; g.fillText(l, x, y + 50) }
+  stat(80, 400, S.workouts.length, t('workouts'))
+  stat(560, 400, streakWeeks(S), t('week streak'))
+  const top = Object.entries(recordsOf(S.workouts)).filter(([id, r]) => EXIDX[id] && r.weight).sort((a, b) => b[1].weight.v - a[1].weight.v).slice(0, 4)
+  g.fillStyle = acc; g.font = '600 40px system-ui, sans-serif'; g.fillText(t('Top lifts'), 80, 580)
+  top.forEach(([id, r], i) => {
+    const y = 660 + i * 90, nm = EXIDX[id].n
+    g.fillStyle = '#fff'; g.font = '500 40px system-ui, sans-serif'; g.fillText(nm.length > 26 ? nm.slice(0, 25) + '…' : nm, 80, y)
+    g.textAlign = 'right'; g.fillText(`${fmtNum(r.weight.v)} ${S.unit}`, 1000, y); g.textAlign = 'left'
+  })
+  return new Promise(res => c.toBlob(res, 'image/png'))
+}
+
+function ExportSheet({ S }) {
+  const d = todayISO()
+  return <>
+    <h3>{t('Export & share')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('CSV opens in any spreadsheet. The full backup (all data) lives in Settings.')}</div>
+    <div className="list">
+      <div className="item" onClick={() => saveFile(workoutsCSV(S), `opengym-workouts-${d}.csv`, 'text/csv')}><span className="lrow-i"><Icon name="dumbbell" /></span><div className="grow"><div className="tt">{t('Workouts (CSV)')}</div><div className="ss">{t('One row per set')}</div></div><Icon name="download" className="chev" /></div>
+      <div className="item" onClick={() => saveFile(bodyweightCSV(S), `opengym-bodyweight-${d}.csv`, 'text/csv')}><span className="lrow-i"><Icon name="scale" /></span><div className="grow"><div className="tt">{t('Body weight (CSV)')}</div></div><Icon name="download" className="chev" /></div>
+      {S.nutrition?.on && <div className="item" onClick={() => saveFile(nutritionCSV(S), `opengym-nutrition-${d}.csv`, 'text/csv')}><span className="lrow-i"><Icon name="flame" /></span><div className="grow"><div className="tt">{t('Nutrition (CSV)')}</div></div><Icon name="download" className="chev" /></div>}
+      <div className="item" onClick={async () => saveFile(await summaryImage(S), `opengym-summary-${d}.png`, 'image/png')}><span className="lrow-i"><Icon name="trophy" /></span><div className="grow"><div className="tt">{t('Share a summary image')}</div><div className="ss">{t('Workouts, streak and top lifts')}</div></div><Icon name="upload" className="chev" /></div>
+    </div>
+  </>
+}
+
 // All-time bests per exercise, most recently improved first.
 function RecordsCard({ S }) {
   const [all, setAll] = useState(false)
@@ -249,7 +295,8 @@ export default function Stats() {
     <div className="hdr">
       <button className="iconbtn" onClick={() => nav('/settings')} aria-label={t('Settings')}><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1, marginLeft: 10 }}><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
-      <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button>
+      <button className="iconbtn" onClick={() => useUI.getState().openSheet(() => <ExportSheet S={S} />)} aria-label={t('Export & share')}><Icon name="download" /></button>
+      <button className="iconbtn" style={{ marginLeft: 6 }} onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button>
     </div>
 
     <div className="tiles">
