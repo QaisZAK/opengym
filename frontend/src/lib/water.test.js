@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater, waterUnit, toUnit, fromUnit } from './water.js'
+import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater, waterUnit, toUnit, fromUnit, suggestGoalMl } from './water.js'
+
+describe('suggestGoalMl', () => {
+  it('is ~35 ml/kg rounded to 50 ml, clamped to 1.5–5 L', () => {
+    expect(suggestGoalMl(80)).toBe(2800)
+    expect(suggestGoalMl(30)).toBe(1500)
+    expect(suggestGoalMl(200)).toBe(5000)
+    expect(suggestGoalMl(null)).toBe(null)
+  })
+})
 
 describe('water units', () => {
   it('converts ml <-> US fl oz, storing whole ml', () => {

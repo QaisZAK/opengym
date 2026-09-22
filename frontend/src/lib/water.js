@@ -26,6 +26,11 @@ export const toUnit = (ml, u) => (u === 'oz' ? Math.round((ml / ML_PER_OZ) * 10)
 export const fromUnit = (v, u) => Math.round(u === 'oz' ? v * ML_PER_OZ : v)
 export const fmtVol = (ml, u) => `${fmtNum(toUnit(ml, u))} ${u}`
 
+// Common rule of thumb: ~35 ml per kg of body weight, rounded to 50 ml and kept in a sane range.
+export const suggestGoalMl = kg => (kg > 0 ? Math.min(5000, Math.max(1500, Math.round((kg * 35) / 50) * 50)) : null)
+// 400 mg/day is the usual adult upper limit (EFSA/FDA).
+export const CAFFEINE_LIMIT = 400
+
 // A log entry snapshot for a drink at a chosen volume (id + timestamp added by the caller).
 export const mkEntry = (drink, ml) => ({ key: drink.key, name: drink.name, icon: drink.icon, ml: Math.round(ml), hydration: drink.hydration, caf: drink.caf })
 

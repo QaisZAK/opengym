@@ -8,7 +8,8 @@ import { fmtNum, fmtDate, todayISO, isoOf, localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import Icon from '../components/Icon.jsx'
 import { Button, Stepper, Switch, Segmented } from '../components/ui.jsx'
-import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater, waterUnit, toUnit, fromUnit, fmtVol } from '../lib/water.js'
+import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater, waterUnit, toUnit, fromUnit, fmtVol, suggestGoalMl, CAFFEINE_LIMIT } from '../lib/water.js'
+import { lastBW } from '../lib/history.js'
 
 const getS = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -26,7 +27,7 @@ function ensureWater(s) {
 // Entries are stored chronologically; remove by position (no per-entry id needed).
 const logDrink = (iso, entry) => update(s => { const w = ensureWater(s); const day = normalizeDay(w.log[iso]).slice(); day.push(entry); w.log[iso] = day })
 const removeDrinkAt = (iso, i) => update(s => { const w = ensureWater(s); const day = normalizeDay(w.log[iso]).slice(); day.splice(i, 1); w.log[iso] = day })
-const setWaterGoal = (ml, unit) => update(s => { const w = ensureWater(s); w.goalMl = Math.max(0, Math.round(ml) || 0); w.unit = unit })
+const setWaterGoal = (ml, unit, cafMax) => update(s => { const w = ensureWater(s); w.goalMl = Math.max(0, Math.round(ml) || 0); w.unit = unit; w.cafMax = Math.max(0, Math.round(cafMax) || 0) })
 const setWaterReminder = patch => update(s => { const w = ensureWater(s); w.reminder = { ...w.reminder, ...patch, tz: localTZ() } })
 
 // Quick-log a glass of water to today — used by the Home widget.
@@ -89,12 +90,15 @@ function WaterSettings({ close }) {
   const w = getS().nutrition?.water || {}, r = w.reminder || {}
   const [unit, setUnit] = useState(waterUnit(getS()))
   const [goal, setGoal] = useState(toUnit(w.goalMl || 2000, unit))
+  const [caf, setCaf] = useState(w.cafMax ?? CAFFEINE_LIMIT)
+  const S = getS(), bw = lastBW(S)
+  const sugg = suggestGoalMl(bw ? (S.unit === 'lb' ? bw.w * 0.45359237 : bw.w) : null)
   const [on, setOn] = useState(!!r.on)
   const [every, setEvery] = useState(r.everyMin || 120)
   const [from, setFrom] = useState(r.from || '09:00')
   const [to, setTo] = useState(r.to || '22:00')
   const save = () => {
-    setWaterGoal(fromUnit(goal, unit), unit)
+    setWaterGoal(fromUnit(goal, unit), unit, caf)
     setWaterReminder({ on, everyMin: Math.max(30, Math.round(every) || 120), from, to })
     close(); toast(t('Saved'))
   }
@@ -102,6 +106,8 @@ function WaterSettings({ close }) {
     <h3>{t('Water settings')}</h3>
     <div style={{ margin: '8px 0 12px' }}><Segmented options={[{ value: 'ml', label: 'ml' }, { value: 'oz', label: 'fl oz' }]} value={unit} onChange={nu => { setGoal(toUnit(fromUnit(goal, unit), nu)); setUnit(nu) }} /></div>
     <div className="row cfgrow" style={{ margin: '8px 0' }}><Stepper label={t('Daily goal')} value={goal} step={unit === 'oz' ? 4 : 100} decimal={false} onChange={setGoal} unit={unit} /></div>
+    {sugg && <button className="chip" style={{ margin: '0 2px 8px' }} onClick={() => setGoal(toUnit(sugg, unit))}>{t('Suggested from body weight: {0}', fmtVol(sugg, unit))}</button>}
+    <div className="row cfgrow" style={{ margin: '8px 0' }}><Stepper label={t('Caffeine limit (0 = off)')} value={caf} step={25} decimal={false} onChange={setCaf} unit="mg" /></div>
     <div className="row between" style={{ padding: '12px 2px' }}><span className="lrow-t">{t('Reminders')}</span><Switch checked={on} onChange={setOn} /></div>
     {on && <>
       <div className="row cfgrow" style={{ margin: '8px 0' }}><Stepper label={t('Every (minutes)')} value={every} step={30} decimal={false} onChange={setEvery} /></div>
@@ -125,6 +131,8 @@ export default function Water() {
   const u = waterUnit(S)
   const entries = normalizeDay(w.log[iso])
   const d = dayWater(entries)
+  const cafMax = w.cafMax ?? CAFFEINE_LIMIT
+  const overCaf = cafMax > 0 && d.caffeine > cafMax
   const days = []
   for (let i = 6; i >= 0; i--) days.push(shift(iso, -i))
   return <>
@@ -143,8 +151,9 @@ export default function Water() {
       <WaterRing hydration={d.hydration} goal={goal} u={u} />
       <div className="row" style={{ justifyContent: 'center', gap: 22, margin: '12px 0 14px' }}>
         <div style={{ textAlign: 'center' }}><div className="stat-v" style={{ fontSize: 18 }}>{fmtNum(toUnit(d.ml, u))}</div><div className="small dim">{t('{0} total', u)}</div></div>
-        <div style={{ textAlign: 'center' }}><div className="stat-v" style={{ fontSize: 18 }}>{fmtNum(d.caffeine)}</div><div className="small dim">{t('mg caffeine')}</div></div>
+        <div style={{ textAlign: 'center' }}><div className="stat-v" style={{ fontSize: 18, color: overCaf ? 'var(--red)' : undefined }}>{fmtNum(d.caffeine)}</div><div className="small dim">{cafMax ? t('of {0} mg caffeine', cafMax) : t('mg caffeine')}</div></div>
       </div>
+      {overCaf && <div className="small" style={{ color: 'var(--red)', margin: '-4px 0 10px', textAlign: 'center' }}>{t('Over your caffeine limit today.')}</div>}
       <div className="row between">
         <span className="muted small">{d.hydration >= goal ? t('Goal reached — nice.') : t('{0} to go', fmtVol(Math.max(0, goal - d.hydration), u))}</span>
         <button className="chip" onClick={openWaterSettings}>{t('Goal: {0}', fmtVol(goal, u))}</button>
