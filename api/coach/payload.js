@@ -56,7 +56,7 @@ const modeOf = (cfg, ex) => {
 function readSession(entry, fallback) {
   const target = (entry && entry.target) || fallback || {};
   const mode = modeOf(target, LIB_BY_ID.get(entry?.id));
-  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup');
+  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup' && s.type !== 'drop');
   const planned = target.sets || sets.length;
   const enough = sets.length >= planned;
   if (mode === 'time') {

@@ -1,8 +1,21 @@
 import { describe, it, expect } from 'vitest'
-import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, warmupRamp, bestWeightFor, lastEntryFor } from './history.js'
+import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, warmupRamp, bestWeightFor, lastEntryFor, nextSetType } from './history.js'
 import { EXDB } from './exercises.js'
 import { readSession } from './progression.js'
 import { bestSetOf } from './onerm.js'
+
+describe('set-type tags', () => {
+  it('cycles normal → W → D → A → F → normal', () => {
+    const seen = []; let t
+    for (let i = 0; i < 5; i++) { t = nextSetType(t); seen.push(t) }
+    expect(seen).toEqual(['warmup', 'drop', 'amrap', 'failure', undefined])
+  })
+  it('prefixes the set label and keeps drop sets out of progression', () => {
+    expect(setLabel(LIFT, { w: 50, r: 8, type: 'drop' })).toBe('D 50×8')
+    const sets = [{ w: 100, r: 5, done: true }, { w: 60, r: 3, type: 'drop', done: true }]
+    expect(readSession({ id: 'x', sets, target: { reps: 5, sets: 1 } }).ok).toBe(true)
+  })
+})
 
 describe('warm-up sets', () => {
   it('ramps 40/60/80% to the working weight, never below the bar', () => {

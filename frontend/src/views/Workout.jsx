@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
-import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, EFFORT, effortOf, stepEffort, capEffort, warmupRamp } from '../lib/history.js'
+import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, EFFORT, effortOf, stepEffort, capEffort, warmupRamp, SET_TYPES, nextSetType } from '../lib/history.js'
 import { BAR } from '../lib/plates.js'
 import { fmtNum, fmtDate, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
@@ -53,6 +53,8 @@ function Elapsed({ start }) {
   }, [start])
   return <span>{t}</span>
 }
+
+const TYPE_NAME = { warmup: 'Warm-up', drop: 'Drop set', amrap: 'AMRAP', failure: 'To failure' }
 
 /* ---------- one exercise block (reps: weight×reps · time: a held duration · cardio: duration+speed) ---------- */
 function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemoveSet, onStartTimed, onAddWarmups }) {
@@ -124,7 +126,10 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       {/* the header carries the same eff3 sizing as the rows, or the labels drift off their columns */}
       <div className={'sethead' + (col3 ? ' eff3' : '')}><span className="n-sp" /><span className="w-sp">{col1.hd}</span><span className="r-sp">{col2.hd}</span>{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
       {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
-        {s.type === 'warmup' ? <div className="n wu" title={t('Warm-up')}>W</div> : <div className="n">{entry.sets.slice(0, i + 1).filter(x => x.type !== 'warmup').length}</div>}
+        {/* tap the number to tag the set: warm-up → drop → AMRAP → failure → normal */}
+        <button className={'n' + (s.type === 'warmup' ? ' wu' : s.type ? ' tg' : '')} aria-label={t('Set type: {0}', t(TYPE_NAME[s.type] || 'Normal'))}
+          onClick={() => onField(i, 'type', nextSetType(s.type))}>
+          {SET_TYPES[s.type] || entry.sets.slice(0, i + 1).filter(x => x.type !== 'warmup').length}</button>
         {cell(s, i, col1, 'w')}
         {cell(s, i, col2, 'r')}
         {col3 && cell(s, i, col3, 'eff')}

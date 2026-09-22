@@ -98,7 +98,7 @@ function deloadTo(cur, step) {
 export function readSession(entry, fallback) {
   const target = (entry && entry.target) || fallback || {}
   const mode = modeOf({ ...target, id: entry && entry.id })
-  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup')
+  const sets = ((entry && entry.sets) || []).filter(s => s.type !== 'warmup' && s.type !== 'drop')
   const planned = target.sets || sets.length
   const enough = sets.length >= planned
 

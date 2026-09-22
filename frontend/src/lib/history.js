@@ -72,7 +72,7 @@ export function setLabel(id, s, cfg) {
   const mode = modeOf(cfg || { id })
   if (mode === 'cardio') return `${s.min || 0} min @ ${fmtNum(s.speed || 0)} km/h`
   if (mode === 'time') return fmtSec(s.sec) + (s.w > 0 ? ` · ${fmtNum(s.w)}` : '')
-  return (s.type === 'warmup' ? 'W ' : '') + `${fmtNum(s.w || 0)}×${s.r || 0}` + effortTail(s)
+  return (SET_TYPES[s.type] ? SET_TYPES[s.type] + ' ' : '') + `${fmtNum(s.w || 0)}×${s.r || 0}` + effortTail(s)
 }
 // Default config for a freshly added exercise.
 export function defaultConfig(id, mode) {
@@ -101,6 +101,12 @@ export function cleanupSg(ex) {
 
 // A logged set that counts: warm-ups are done but never feed PRs, volume or progression.
 export const isWork = s => !!s.done && s.type !== 'warmup'
+
+// Set-type tags, cycled by tapping a set's number. Untagged = a normal working set. Drop sets
+// and warm-ups are extras, so progression (readSession) ignores both; AMRAP/failure stay in.
+export const SET_TYPES = { warmup: 'W', drop: 'D', amrap: 'A', failure: 'F' }
+const CYCLE = [undefined, 'warmup', 'drop', 'amrap', 'failure']
+export const nextSetType = type => CYCLE[(CYCLE.indexOf(type) + 1) % CYCLE.length]
 
 // Warm-up ramp up to a working weight: ~40/60/80% for 5/3/2, rounded to the smallest jump and
 // never below the empty bar. Duplicates (light work weights) collapse.

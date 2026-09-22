@@ -577,7 +577,9 @@ h4.sec{
 .setrow.eff3 .stp.eff button{width:20px}
 .setrow.eff3 .stp .num{font-size:14px}
 .setrow.done .n{background:var(--acc);color:var(--on-acc)}
+.setrow button.n{border:0;padding:0;cursor:pointer;font-family:inherit}
 .setrow .n.wu{color:var(--yellow);font-weight:700}
+.setrow .n.tg{color:var(--orange);font-weight:700}
 .setrow.done{opacity:.45}
 /* why the next target is what it is (issue #17) */
 .progline{
