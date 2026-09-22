@@ -112,6 +112,21 @@ Each phase is a branch → PR on the fork, with vitest tests for pure logic
 | 4 | 5.5 | AI meal suggestions (reuse Coach pipeline) + a non-AI fallback that always works. |
 | 5 | 5.6 | Water tracker + reminders (shape reserved in Phase 1). |
 
+## Status — delivered (branch `feat/nutrition-tracking`)
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1 · calorie & macro tracking | ✅ done | Verified end-to-end in the browser. |
+| 1b · offline food catalog | ✅ done | ~180 common foods bundled + ranked search (added after "egg/coffee had no matches"). |
+| 2 · saved meals & recipes | ✅ done | Verified: build a meal, one-tap log to a slot. |
+| 3 · barcode/QR scan | ⚠️ done, needs device | Manual entry + not-found→create verified in-app. Camera decode (BarcodeDetector / zxing-wasm) needs a real phone on staging. |
+| 4 · meal suggestions | ✅ non-AI done | Always-on engine verified. **AI layer is gated on the Coach being connected** (the credential decision is still open). |
+| 5 · water tracker | ✅ tracker done, reminders need push | Client verified. The server reminder loop needs a push subscription (on-device / staging) to verify delivery. |
+
+Two items still need your input / on-device testing:
+- **AI meal suggestions** need the Coach connected with a provider + credential (the open §4 decision). The non-AI engine ships now and always works; the AI layer plugs in via the Coach pipeline afterwards.
+- **Barcode camera** and **water push reminders** can only be verified on a real device over HTTPS (local Docker / staging).
+
 ## Deploy / ops notes
 
 - **Don't touch** `RP_ID` / `ORIGIN` (invalidates passkeys) or `data/`.
