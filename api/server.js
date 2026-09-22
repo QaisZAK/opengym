@@ -13,6 +13,7 @@ import * as coachConfig from './coach/config.js';
 import * as coachJobs from './coach/jobs.js';
 import { coachRoutes } from './coach/routes.js';
 import { startCadence } from './coach/cadence.js';
+import { foodSearch, foodBarcode, OFF_ATTR } from './food.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -471,6 +472,27 @@ const routes = {
       });
     } else presence.delete(user.id);
     json(res, 200, { ok: true });
+  },
+
+  /* ---------- food data (Open Food Facts proxy) ---------- */
+  // Proxied so the server sets the User-Agent OFF requires and caches results (food.js). The
+  // router matches exact paths only, so lookups use ?q= / ?code= like /api/admin/user?id=.
+  'GET /api/food/search': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const q = (new URL(req.url, 'http://x').searchParams.get('q') || '').trim();
+    if (q.length < 2) return json(res, 200, { results: [], attribution: OFF_ATTR });
+    json(res, 200, { results: await foodSearch(q), attribution: OFF_ATTR });
+  },
+
+  'GET /api/food/barcode': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const code = (new URL(req.url, 'http://x').searchParams.get('code') || '').replace(/[^0-9]/g, '');
+    if (!code) return json(res, 400, { error: 'code required' });
+    const food = await foodBarcode(code);
+    if (!food) return json(res, 404, { error: 'not found' });
+    json(res, 200, { food, attribution: OFF_ATTR });
   },
 
   /* ---------- admin dashboard ---------- */
