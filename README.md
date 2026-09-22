@@ -27,19 +27,22 @@ No account on someone else's server, no subscription, no ads. Just `docker compo
 
 <br>
 
-> ### 🤖 This is a fork — it adds the AI Coach
+> ### 🍽️ QaisZAK/opengym — nutrition, hydration, progress photos & more
 >
-> A fork of [DuarteSantos8/openGym](https://github.com/DuarteSantos8/openGym) that adds one
-> optional feature: an AI that **designs** your training plan and **revises it from what you
-> actually log**, running on your own server under your own provider account.
+> A fork of [alexpcosta/opengym](https://github.com/alexpcosta/opengym) — the AI Coach fork of
+> [DuarteSantos8/openGym](https://github.com/DuarteSantos8/openGym) — that grows openGym from a gym log into a full training + nutrition + hydration tracker:
 >
-> Everything else is upstream openGym. With the Coach switched off, this is byte-for-byte the
-> app it forked from.
+> - **Food** — calories & macros against targets, a big offline food catalog + Open Food Facts,
+>   barcode scan, favourites & recents, saved meals & recipes, **AI meal plans** → [docs/NUTRITION.md](docs/NUTRITION.md)
+> - **Water** — typed drinks (bottles, coffee, tea, soda, energy…) with hydration factors,
+>   caffeine tracking and reminders → [docs/WATER.md](docs/WATER.md)
+> - **Progress photos** in *your own* Google Drive, with a before/after gallery → [docs/PHOTOS.md](docs/PHOTOS.md)
+> - **Training upgrades** — warm-ups & set tags, plate calculator, rep/volume/hold PRs and a
+>   records wall, per-exercise rest, editable history, body measurements, CSV export, starter templates
 >
-> **→ [What it does and how to use it](docs/AI_COACH.md)** ·
-> [Claude setup](Claude-setup-instructions.md) ·
-> [ChatGPT / Codex setup](ChatGPT-setup-instructions.md) ·
-> [design deck (PDF)](openGym_AI_Strategy.pdf)
+> Every addition is opt-in or additive: with Nutrition off and no Google client id configured,
+> the app behaves like upstream. AI Coach docs: **[docs/AI_COACH.md](docs/AI_COACH.md)** ·
+> [Claude setup](Claude-setup-instructions.md) · [ChatGPT / Codex setup](ChatGPT-setup-instructions.md)
 
 <br>
 
@@ -88,11 +91,21 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - ✨ **Your own exercises** — a name and a body part is enough; they behave like built-in ones everywhere, with an optional description instead of an animation
 - 🟩 **Activity heatmap** — a GitHub-style year view, shaded by time spent training
 - 💪 **Muscle map** — a front-and-back body diagram shaded by how much work each muscle got, over a week, a month or all time. It names the muscles you *haven't* trained in that period, previews what a routine hits while you build it, and shows what you just trained when you finish. Male or female figure, your pick
-- 🔔 **Push notifications** — rest-timer alerts even with the app closed, plus an optional reminder on days you have a workout planned but haven't logged one. Opt in per profile; keys are generated on first run, nothing to configure
-- 🤖 **AI Coach** (optional) — an AI that *designs* your plan and adjusts it from what you actually log. A short intake produces a complete weekly plan you can refine in plain language; on demand or on a schedule it reads your stalls, effort ratings, adherence and body-weight trend and proposes **discrete, explained changes** you accept one by one. Choose the official Claude Agent SDK or the bundled OpenAI Codex CLI with ChatGPT device-code sign-in; it is off until the instance owner enables it, needs each profile's separate consent, and never changes anything without your approval — every change-set is snapshotted and revertible. The progression engine still owns your session-to-session weights. **[Full guide →](docs/AI_COACH.md)**
-- 🔑 **Passkeys, not passwords** — Face ID / Touch ID / fingerprint login; each profile keeps its own data, synced across devices
+- 🔔 **Push notifications** — rest-timer alerts even with the app closed, plus optional reminders: workout days, weigh-ins, water, and a Sunday "streak at risk" nudge — with quiet hours and snooze. Opt in per profile; keys are generated on first run, nothing to configure
+- 🍽️ **Nutrition** (optional, per profile) — calorie & macro targets from your body stats (Mifflin-St Jeor), a meal-by-meal log over a ~200-food offline catalog plus Open Food Facts search and **barcode scanning**, favourites & recent foods, custom foods with household servings ("1 cup = 240 g"), fiber / sugar / sodium when known, saved meals & recipes, copy a day or meal, and non-AI suggestions that fit what's left today. **[Guide →](docs/NUTRITION.md)**
+- 💧 **Water** — tap a drink tile (glass, bottles, coffee, tea, soda, energy drink…); each counts toward your goal by its own hydration factor and adds its caffeine. Goal suggested from body weight, caffeine limit warning, ml or fl oz, reminders inside your own hours. **[Guide →](docs/WATER.md)**
+- 📸 **Progress photos** — attach a photo to a weigh-in or add one on its own; photos go to **your Google Drive** (`drive.file` scope — the app sees only files it created), never to the server. Gallery with a before/after compare. **[Guide →](docs/PHOTOS.md)**
+- 📏 **Body measurements** — waist, chest, hips, arms, thighs, neck, charted over time (cm or in)
+- 🏆 **Records** — weight, estimated-1RM, rep, session-volume and longest-hold PRs, badged in history and collected on a records wall
+- 🔥 **Warm-ups & set tags** — generate a warm-up ramp, tag sets as warm-up / drop / AMRAP / to failure; warm-ups never count toward PRs, volume or progression
+- 🧮 **Plate calculator** — plates per side for any barbell weight, with your bar weight remembered
+- ✏️ **Edit history** — fix a logged workout or log one you forgot, back-dated
+- 📤 **CSV export & share card** — workouts (one row per set), body weight and nutrition as CSV, plus a shareable summary image
+- 🤖 **AI Coach** (optional) — an AI that *designs* your plan and adjusts it from what you actually log — and, in this fork, **plans your meals** for the rest of the day from your targets, preferences and saved foods. A short intake produces a complete weekly plan you can refine in plain language; on demand or on a schedule it reads your stalls, effort ratings, adherence and body-weight trend and proposes **discrete, explained changes** you accept one by one. Choose the official Claude Agent SDK or the bundled OpenAI Codex CLI with ChatGPT device-code sign-in; it is off until the instance owner enables it, needs each profile's separate consent, and never changes anything without your approval — every change-set is snapshotted and revertible. The progression engine still owns your session-to-session weights. **[Full guide →](docs/AI_COACH.md)**
+- 🔑 **Passkeys, not passwords** — Face ID / Touch ID / fingerprint login; each profile keeps its own data, synced across devices. Add a backup passkey (second phone, security key) so losing one device can't lock you out
 - 🛠️ **Admin dashboard** (optional) — for whoever runs the instance: who's training right now, per-user history, disable accounts, and invite-only signup. Off by default, so a fresh instance stays open with no admin
-- 🎨 **Designed, not assembled** — light/dark themes and 8 accent colors saved to your profile, over a hand-drawn icon set instead of emoji, so it looks the same on every phone
+- 🎨 **Designed, not assembled** — light/dark/auto themes and 8 accent colors saved to your profile, over a hand-drawn icon set instead of emoji, so it looks the same on every phone. Pinch-zoom, keyboard navigation and screen-reader-friendly sheets
+- 📲 **Home-screen shortcuts** — long-press the installed app for Start workout, Log weight, Add water or Log food
 - 🌍 **12 languages** — full UI translation (EN, DE, ES, FR, IT, PT, PL, TR, RU, ZH, KO, HI); exercise instructions localized in 10 of them, loaded on demand so the app stays fast
 - 📥 **Bring your history with you** — import from **FitNotes** (Android and iOS), **Strong** and **Hevy**, or body weight straight out of an **Apple Health** export. Exercise names are matched against the library and anything unrecognised becomes one of your own exercises, so nothing in the file is dropped
 - 📦 **Yours to keep** — one-tap JSON export/import, guest mode, **no telemetry**
@@ -103,8 +116,8 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 You need [Docker](https://docs.docker.com/get-docker/) with Compose.
 
 ```bash
-git clone https://github.com/DuarteSantos8/openGym
-cd openGym
+git clone https://github.com/QaisZAK/opengym
+cd opengym
 cp .env.example .env
 docker compose pull   # grab prebuilt images (amd64 + arm64) — skip to build from source instead
 docker compose up -d
@@ -153,9 +166,11 @@ mobile app is the install-and-done flavor.
 ## Your data
 
 Lives in `./data` on your host: `db.json` (profiles + public passkeys), `state-<user>.json`
-(each user's plan, workouts, body weight, settings), and `secret` (the session-cookie key).
-**Back up `./data` and you've backed up everything.** Passkey private keys never touch the
-server — they stay in your phone's secure hardware / your password manager.
+(each user's plan, workouts, body weight, nutrition & water logs, settings), and `secret` (the
+session-cookie key). **Back up `./data` and you've backed up everything.** Passkey private keys
+never touch the server — they stay in your phone's secure hardware / your password manager.
+Progress photos never touch it either: they live in each user's own Google Drive, and the
+server only stores their Drive file ids.
 
 ## Configuration
 
@@ -170,6 +185,7 @@ All via `.env` (see `.env.example`):
 | `ADMIN_UIDS`  | User ids that get the admin dashboard (comma-separated) | *(none)*             |
 | `INVITE_ONLY` | Require an invite code to create a profile           | *(off)*                 |
 | `COACH_DISABLED` | Force the AI Coach off, whatever the admin dashboard says | *(unset)*        |
+| `GOOGLE_CLIENT_ID` | OAuth *web* client id that enables progress photos in Google Drive ([setup](docs/PHOTOS.md)) — public, no secret needed | *(unset: photos hidden)* |
 
 Push notification keys are generated on first run and saved to `./data/vapid.json` — nothing to set.
 
@@ -188,12 +204,19 @@ Rough, community-driven — ideas and PRs welcome:
 - [x] Estimated 1RM per exercise
 - [ ] Percentage / training-max programming (5/3/1-style) on top of the progression engine
 - [x] AI Coach — plan design and feedback-driven plan reviews, from a CLI agent running on your own server
-- [ ] More starter plans (upper/lower, full-body, 5×5)
+- [x] More starter plans (upper/lower, full-body, 5×5)
 - [x] Importers from FitNotes / Strong / Hevy (including the RPE they record), and body weight from Apple Health
 - [x] Effort per set — RIR or RPE, whichever scale you think in
-- [ ] Body measurements (waist, arms…) alongside weight
-- [ ] Per-exercise notes & plate calculator
+- [x] Body measurements (waist, arms…) alongside weight
+- [x] Plate calculator
+- [ ] Per-exercise notes
+- [x] Nutrition (calories, macros, barcode, meals), water & caffeine, progress photos, AI meal plans
 - [ ] Exercise instructions in German & Portuguese (UI is translated; upstream dataset doesn't ship these yet)
+
+Deliberately **not** in this fork yet (they need native builds, platform entitlements or ops work):
+Apple Health / Google Fit / Health Connect sync · Apple Watch & Wear OS · home-screen widgets,
+Live Activities & Siri Shortcuts · social feed / share links · offline edit merging (sync is
+last-write-wins per profile, fine for a household) · API rate limiting (do it at the reverse proxy).
 
 ## Tech
 

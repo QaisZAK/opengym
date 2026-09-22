@@ -123,9 +123,19 @@ Each phase is a branch → PR on the fork, with vitest tests for pure logic
 | 4 · meal suggestions | ✅ non-AI done | Always-on engine verified. **AI layer is gated on the Coach being connected** (the credential decision is still open). |
 | 5 · water tracker | ✅ tracker done, reminders need push | Client verified. The server reminder loop needs a push subscription (on-device / staging) to verify delivery. |
 
-Two items still need your input / on-device testing:
-- **AI meal suggestions** need the Coach connected with a provider + credential (the open §4 decision). The non-AI engine ships now and always works; the AI layer plugs in via the Coach pipeline afterwards.
-- **Barcode camera** and **water push reminders** can only be verified on a real device over HTTPS (local Docker / staging).
+### Follow-up (branch `feat/audit-complete`)
+
+| Item | Status |
+|------|--------|
+| Favourites & recent foods, edit/delete custom foods, copy day/meal | ✅ done |
+| Fiber / sugar / sodium, household servings | ✅ done |
+| Water ml/oz, goal from body weight, caffeine limit | ✅ done |
+| **AI meal plans** (Coach job kind `meals`, consent v2) | ✅ done — fixture-tested end to end; live run needs the instance's Coach connected |
+| Progress-photo gallery, before/after, standalone photos | ✅ done — needs a real Google account to verify |
+
+Still only verifiable on a real device over HTTPS: the **barcode camera**, **push reminders**
+(water, weigh-in, streak) and **Google Drive** photos. User guides: [NUTRITION](../NUTRITION.md),
+[WATER](../WATER.md), [PHOTOS](../PHOTOS.md).
 
 ## Google Drive progress photos
 
