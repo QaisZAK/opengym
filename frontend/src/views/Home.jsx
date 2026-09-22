@@ -9,7 +9,7 @@ import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { dayTotals } from '../lib/nutrition.js'
-import { dayWater } from '../lib/water.js'
+import { dayWater, waterUnit, toUnit, fromUnit, fmtVol } from '../lib/water.js'
 import { openLog, slotForNow } from './Nutrition.jsx'
 import { quickWater } from './Water.jsx'
 import { glyphOf } from '../lib/glyphs.js'
@@ -84,6 +84,7 @@ export default function Home() {
   const foodTot = dayTotals((nut.log && nut.log[todayISO()]) || [])
   const water = nut.water || {}
   const wGoal = water.goalMl || 2000
+  const wu = waterUnit(S)
   const wToday = dayWater((water.log && water.log[todayISO()]) || [])
   const nextUp = (() => {
     for (let i = 1; i <= 7; i++) {
@@ -146,13 +147,12 @@ export default function Home() {
           <h2 style={{ margin: 0 }}>{t('Water')}</h2>
           <Icon name="water" className="chev" style={{ fontSize: 20, color: 'var(--teal)' }} />
         </div>
-        <div className="big">{fmtNum(wToday.hydration)} <span className="muted" style={{ fontSize: '1rem' }}>/ {fmtNum(wGoal)} ml</span></div>
+        <div className="big">{fmtNum(toUnit(wToday.hydration, wu))} <span className="muted" style={{ fontSize: '1rem' }}>/ {fmtVol(wGoal, wu)}</span></div>
         <div style={{ height: 8, borderRadius: 4, background: 'var(--sep)', overflow: 'hidden', margin: '8px 0 12px' }}>
           <div style={{ width: Math.min(100, wGoal ? Math.round((wToday.hydration / wGoal) * 100) : 0) + '%', height: '100%', background: 'var(--teal)' }} />
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <Button icon="plus" onClick={e => { e.stopPropagation(); quickWater(250) }}>250 ml</Button>
-          <Button icon="plus" onClick={e => { e.stopPropagation(); quickWater(500) }}>500 ml</Button>
+          {(wu === 'oz' ? [8, 16] : [250, 500]).map(v => <Button key={v} icon="plus" onClick={e => { e.stopPropagation(); quickWater(fromUnit(v, wu)) }}>{v} {wu}</Button>)}
         </div>
       </div>
     </div>

@@ -1,3 +1,5 @@
+import { fmtNum } from './format.js'
+
 // Drink catalog for the water tracker. Each preset carries a default volume, a hydration factor
 // (how much of the volume counts toward the hydration goal — plain water is 1.0, caffeinated and
 // sugary drinks a little less) and caffeine in mg per 100 ml. Logged entries snapshot these values
@@ -16,6 +18,13 @@ export const DRINKS = [
   { key: 'milk',        name: 'Milk',           icon: 'glass',       ml: 250,  hydration: 0.9,  caf: 0 }
 ]
 export const drinkByKey = k => DRINKS.find(d => d.key === k)
+
+// Volumes are stored in ml; 'oz' (US fl oz) is display/input only. Default follows the weight unit.
+export const ML_PER_OZ = 29.5735
+export const waterUnit = S => S?.nutrition?.water?.unit || (S?.unit === 'lb' ? 'oz' : 'ml')
+export const toUnit = (ml, u) => (u === 'oz' ? Math.round((ml / ML_PER_OZ) * 10) / 10 : Math.round(ml))
+export const fromUnit = (v, u) => Math.round(u === 'oz' ? v * ML_PER_OZ : v)
+export const fmtVol = (ml, u) => `${fmtNum(toUnit(ml, u))} ${u}`
 
 // A log entry snapshot for a drink at a chosen volume (id + timestamp added by the caller).
 export const mkEntry = (drink, ml) => ({ key: drink.key, name: drink.name, icon: drink.icon, ml: Math.round(ml), hydration: drink.hydration, caf: drink.caf })

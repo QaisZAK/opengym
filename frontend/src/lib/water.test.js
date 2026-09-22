@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater } from './water.js'
+import { DRINKS, drinkByKey, mkEntry, normalizeDay, dayWater, waterUnit, toUnit, fromUnit } from './water.js'
+
+describe('water units', () => {
+  it('converts ml <-> US fl oz, storing whole ml', () => {
+    expect(toUnit(250, 'ml')).toBe(250)
+    expect(toUnit(236.6, 'oz')).toBe(8)
+    expect(fromUnit(8, 'oz')).toBe(237)
+    expect(fromUnit(toUnit(500, 'oz'), 'oz')).toBeCloseTo(500, -1)
+  })
+  it('defaults to oz for lb profiles unless set explicitly', () => {
+    expect(waterUnit({ unit: 'lb' })).toBe('oz')
+    expect(waterUnit({ unit: 'kg' })).toBe('ml')
+    expect(waterUnit({ unit: 'lb', nutrition: { water: { unit: 'ml' } } })).toBe('ml')
+  })
+})
 
 describe('DRINKS catalog', () => {
   it('has the common presets with hydration + caffeine', () => {
