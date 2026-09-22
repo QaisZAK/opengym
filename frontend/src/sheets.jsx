@@ -554,7 +554,8 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
     const prog = {}
     if (c.prog) prog.prog = c.prog
     if (c.inc > 0) prog.inc = c.inc
-    if (cardio) onSave({ sets, min: Math.max(1, Math.round(c.min) || 20), speed: Math.max(0, c.speed || 8) })
+    if (c.rest > 0) prog.rest = c.rest       // per-exercise rest; absent = the profile's rest timer
+    if (cardio) onSave({ sets, min: Math.max(1, Math.round(c.min) || 20), speed: Math.max(0, c.speed || 8), ...(c.rest > 0 ? { rest: c.rest } : {}) })
     else if (mode === 'time') onSave({ sets, mode: 'time', sec: Math.max(1, Math.round(c.sec) || 45), weight: Math.max(0, c.weight || 0), ...prog })
     else {
       const reps = Math.max(1, Math.round(c.reps) || 10)
@@ -594,6 +595,11 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
       {t('A timer runs while you hold the set. Leave the weight at 0 for bodyweight holds.')}
     </div>}
     <ProgressionFields ex={ex} mode={mode} c={c} setC={setC} routine={routine} unit={st.unit} />
+    <h4 className="sec">{t('Rest between sets')}</h4>
+    <div style={{ marginBottom: 18 }}>
+      <Segmented className="seg-range" value={c.rest || 0} onChange={v => setC(x => ({ ...x, rest: v }))}
+        options={[{ value: 0, label: t('Default') }, { value: 60, label: '1:00' }, { value: 90, label: '1:30' }, { value: 120, label: '2:00' }, { value: 180, label: '3:00' }]} />
+    </div>
     <Button variant="primary" onClick={save}>{existing ? t('Save') : t('Add to routine')}</Button>
     {ex.custom && <><div style={{ height: 8 }} /><Button icon="pencil" onClick={() => { close(); customExSheet(ex) }}>{t('Edit or delete this exercise')}</Button></>}
     {onDelete && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { close(); onDelete() }}>{t('Remove from routine')}</Button></>}
