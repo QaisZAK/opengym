@@ -42,6 +42,7 @@ const addEntry = (iso, entry) => update(s => { const n = nz(s); (n.log[iso] = n.
 const updateEntry = (iso, id, entry) => update(s => { const n = nz(s); const d = n.log[iso] || []; const i = d.findIndex(e => e.id === id); if (i >= 0) d[i] = { ...d[i], ...entry, id } })
 const delEntry = (iso, id) => update(s => { const n = nz(s); n.log[iso] = (n.log[iso] || []).filter(e => e.id !== id) })
 const upsertFood = food => update(s => { const n = nz(s); const i = n.foods.findIndex(f => f.id === food.id); if (i >= 0) n.foods[i] = food; else n.foods.push(food) })
+const delFood = id => update(s => { const n = nz(s); n.foods = n.foods.filter(f => f.id !== id) })
 // Sex is one source of truth on s.body (which also drives the body-diagram figure); nutrition.profile
 // keeps only the nutrition-specific bits (age, height, activity, goal).
 const saveTargets = (profile, targets) => update(s => {
@@ -144,7 +145,7 @@ function MealSection({ meal, iso, entries }) {
 }
 
 /* ============================ sheets ============================ */
-function FoodRow({ food, onClick }) {
+function FoodRow({ food, onClick, icon = 'plus' }) {
   const per = food.per === 'serving' ? t('serving') : '100g'
   return (
     <div className="item" onClick={onClick}>
@@ -152,7 +153,7 @@ function FoodRow({ food, onClick }) {
         <div className="tt">{food.fav && <Icon name="starFill" style={{ color: 'var(--yellow)', marginRight: 4 }} />}{food.name}{food.estimate && <span className="tag" style={{ marginLeft: 6 }}>{t('est.')}</span>}</div>
         <div className="ss">{fmtNum(food.kcal)} kcal · {per}{food.brand ? ' · ' + food.brand : ''}</div>
       </div>
-      <Icon name="plus" className="chev" />
+      <Icon name={icon} className="chev" />
     </div>
   )
 }
@@ -345,21 +346,39 @@ function QuickAdd({ meal, iso, close }) {
   </>
 }
 
-function CustomFood({ meal, iso, code, close }) {
-  const [name, setName] = useState('')
-  const [per, setPer] = useState('100g')
-  const [kcal, setKcal] = useState(null); const [p, setP] = useState(null); const [c, setC] = useState(null); const [f, setF] = useState(null)
+function CustomFood({ meal, iso, code, existing: ex, close }) {
+  const [name, setName] = useState(ex?.name || '')
+  const [per, setPer] = useState(ex?.per || '100g')
+  const [kcal, setKcal] = useState(ex?.kcal ?? null); const [p, setP] = useState(ex?.protein ?? null); const [c, setC] = useState(ex?.carbs ?? null); const [f, setF] = useState(ex?.fat ?? null)
+  code = code || ex?.barcode
   const build = () => {
     if (!name.trim()) { toast(t('Give it a name')); return null }
     if (!(kcal > 0)) { toast(t('Enter calories')); return null }
-    const food = { id: 'f' + uid(), name: name.trim(), per, kcal: Math.round(kcal), protein: numN(p) || 0, carbs: numN(c) || 0, fat: numN(f) || 0, source: 'custom', ...(code ? { barcode: code } : {}) }
+    const food = { ...ex, id: ex?.id || 'f' + uid(), name: name.trim(), per, kcal: Math.round(kcal), protein: numN(p) || 0, carbs: numN(c) || 0, fat: numN(f) || 0, source: 'custom', ...(code ? { barcode: code } : {}) }
     upsertFood(food)
     return food
   }
+  if (ex) return <>
+    <h3>{t('Edit food')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Past log entries keep the values they were logged with.')}</div>
+    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF }} />
+    <Button variant="primary" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Save')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="danger" icon="trash" onClick={() => { delFood(ex.id); close(); toast(t('Food deleted')) }}>{t('Delete food')}</Button>
+  </>
   return <>
     <h3>{t('New food')}</h3>
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Saved to your foods so you can log it again.')}</div>
     {code && <div className="muted small" style={{ marginBottom: 12 }}>{t('Barcode: {0}', code)}</div>}
+    <FoodFields {...{ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF }} />
+    <Button variant="primary" onClick={() => { const food = build(); if (food) { close(); openPortion(food, meal, iso) } }}>{t('Save & log')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Just save')}</Button>
+  </>
+}
+
+function FoodFields({ name, setName, per, setPer, kcal, setKcal, p, setP, c, setC, f, setF }) {
+  return <>
     <input className="field" placeholder={t('Name')} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
     <div style={{ margin: '12px 0' }}>
       <Segmented options={[{ value: '100g', label: t('per 100 g/ml') }, { value: 'serving', label: t('per serving') }]} value={per} onChange={setPer} />
@@ -372,9 +391,6 @@ function CustomFood({ meal, iso, code, close }) {
       <div className="stp-w"><span className="stp-l">{t('Carbs (g)')}</span><NumberField value={c} nullable onChange={setC} /></div>
       <div className="stp-w"><span className="stp-l">{t('Fat (g)')}</span><NumberField value={f} nullable onChange={setF} /></div>
     </div>
-    <Button variant="primary" onClick={() => { const food = build(); if (food) { close(); openPortion(food, meal, iso) } }}>{t('Save & log')}</Button>
-    <div style={{ height: 8 }} />
-    <Button variant="ghost" className="dim" onClick={() => { if (build()) { close(); toast(t('Food saved')) } }}>{t('Just save')}</Button>
   </>
 }
 
@@ -452,7 +468,7 @@ export const openTargets = () => ui().openSheet(close => <Targets close={close} 
 export const openLog = (meal, iso) => ui().openSheet(close => <LogSheet meal={meal} iso={iso} close={close} />)
 const openPortion = (food, meal, iso, opts = {}) => ui().openSheet(close => <Portion food={food} meal={meal} iso={iso} editId={opts.editId} initQty={opts.initQty} initUnit={opts.initUnit} onAdd={opts.onAdd} close={close} />)
 const openQuickAdd = (meal, iso) => ui().openSheet(close => <QuickAdd meal={meal} iso={iso} close={close} />)
-const openCustomFood = (meal, iso, code) => ui().openSheet(close => <CustomFood meal={meal} iso={iso} code={code} close={close} />)
+const openCustomFood = (meal, iso, code, existing) => ui().openSheet(close => <CustomFood meal={meal} iso={iso} code={code} existing={existing} close={close} />)
 
 // A scanned/typed code: match the user's own barcoded foods offline first, then Open Food Facts;
 // if nothing is found, offer to create the food with the code prefilled.
@@ -521,9 +537,9 @@ function RecipeBuilder({ existing, close }) {
 
 function MealsManager({ close }) {
   const n = getS().nutrition || {}
-  const meals = n.meals || [], recipes = n.recipes || []
+  const meals = n.meals || [], recipes = n.recipes || [], foods = n.foods || []
   return <>
-    <h3>{t('Saved meals & recipes')}</h3>
+    <h3>{t('Meals, recipes & foods')}</h3>
     <div className="muted small" style={{ marginBottom: 10 }}>{t('Build a meal or recipe once, then log it in a tap from any day.')}</div>
     <div className="row" style={{ gap: 8, marginBottom: 10 }}>
       <Button size="sm" icon="plus" onClick={() => { close(); openMealBuilder() }}>{t('New meal')}</Button>
@@ -534,6 +550,10 @@ function MealsManager({ close }) {
       {recipes.map(r => <RecipeRow key={r.id} r={r} onClick={() => { close(); openRecipeBuilder(r) }} />)}
       {!meals.length && !recipes.length && <div className="muted small" style={{ padding: 8 }}>{t('Nothing saved yet.')}</div>}
     </div>
+    {foods.length > 0 && <>
+      <div className="sect-t" style={{ padding: '14px 2px 2px' }}>{t('My foods')}</div>
+      <div className="list">{foods.map(f => <FoodRow key={f.id} food={f} icon="pencil" onClick={() => { close(); openCustomFood(null, null, null, f) }} />)}</div>
+    </>}
   </>
 }
 
