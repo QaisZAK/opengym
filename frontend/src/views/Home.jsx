@@ -2,12 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutine, effectiveRoutineId, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
-import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
+import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS, DAYN } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
+import { dayTotals } from '../lib/nutrition.js'
+import { dayWater } from '../lib/water.js'
+import { openLog, slotForNow } from './Nutrition.jsx'
+import { quickWater } from './Water.jsx'
 import { glyphOf } from '../lib/glyphs.js'
 import { coachAvailable, hasConsent } from '../lib/coach.js'
 import { useCoachStatus } from '../lib/coach-api.js'
@@ -73,6 +77,23 @@ export default function Home() {
   const plannedPerWeek = Object.keys(S.week).filter(k => S.week[k]).length
   const bwPoints = S.bodyweight.slice(-30).map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))
 
+  // Home widgets: today's food & water at a glance, and the next planned session on a rest day.
+  const nut = S.nutrition || {}
+  const nOn = !!nut.on
+  const tg = nut.targets || {}
+  const foodTot = dayTotals((nut.log && nut.log[todayISO()]) || [])
+  const water = nut.water || {}
+  const wGoal = water.goalMl || 2000
+  const wToday = dayWater((water.log && water.log[todayISO()]) || [])
+  const nextUp = (() => {
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i)
+      const rid = effectiveRoutineId(S, isoOf(d))
+      if (rid) { const r = S.routines.find(x => x.id === rid); if (r) return { r, d } }
+    }
+    return null
+  })()
+
   // today's session shown right under the week strip
   const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
 
@@ -97,6 +118,7 @@ export default function Home() {
           <div style={{ minWidth: 0 }}>
             <div className="lbl2">{t('Today')}</div>
             <div className="ttl">{S.active ? t('{0} — in progress', S.active.name) : routine ? routine.name : t('Rest day')}{todayOvr && routine ? ' · ' + t('rescheduled') : ''}</div>
+            {!S.active && !routine && nextUp && <div className="lbl2" style={{ marginTop: 2 }}>{t('Next: {0} · {1}', nextUp.r.name, t(DAYN[nextUp.d.getDay()]))}</div>}
           </div>
         </div>
         {S.active ? <span className="tag" style={{ color: 'var(--orange)', background: 'color-mix(in srgb,var(--orange) 16%,transparent)' }}>{t('Resume')}</span>
@@ -106,6 +128,34 @@ export default function Home() {
     </div>
 
     {coachOn && <CoachCard nav={nav} />}
+
+    <div className="cols">
+      {nOn && <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => nav('/nutrition')}>
+        <div className="row between" style={{ marginBottom: 6 }}>
+          <h2 style={{ margin: 0 }}>{t('Food')}</h2>
+          <Icon name="flame" className="chev" style={{ fontSize: 20, color: 'var(--orange)' }} />
+        </div>
+        <div className="big">{fmtNum(foodTot.kcal)} <span className="muted" style={{ fontSize: '1rem' }}>{tg.kcal ? '/ ' + fmtNum(tg.kcal) : 'kcal'}</span></div>
+        {tg.kcal > 0 && <div className="muted small" style={{ marginTop: 2 }}>{t('{0} kcal left', fmtNum(Math.max(0, tg.kcal - foodTot.kcal)))}</div>}
+        <div style={{ height: 12 }} />
+        <Button icon="plus" onClick={e => { e.stopPropagation(); openLog(slotForNow(), todayISO()) }}>{t('Add food')}</Button>
+      </div>}
+
+      <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => nav('/water')}>
+        <div className="row between" style={{ marginBottom: 6 }}>
+          <h2 style={{ margin: 0 }}>{t('Water')}</h2>
+          <Icon name="water" className="chev" style={{ fontSize: 20, color: 'var(--teal)' }} />
+        </div>
+        <div className="big">{fmtNum(wToday.hydration)} <span className="muted" style={{ fontSize: '1rem' }}>/ {fmtNum(wGoal)} ml</span></div>
+        <div style={{ height: 8, borderRadius: 4, background: 'var(--sep)', overflow: 'hidden', margin: '8px 0 12px' }}>
+          <div style={{ width: Math.min(100, wGoal ? Math.round((wToday.hydration / wGoal) * 100) : 0) + '%', height: '100%', background: 'var(--teal)' }} />
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <Button icon="plus" onClick={e => { e.stopPropagation(); quickWater(250) }}>250 ml</Button>
+          <Button icon="plus" onClick={e => { e.stopPropagation(); quickWater(500) }}>500 ml</Button>
+        </div>
+      </div>
+    </div>
 
     {!S.routines.length && !S.active && (
       <div className="card">
@@ -127,8 +177,8 @@ export default function Home() {
       <div className="row between" style={{ marginBottom: 6 }}>
         <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
         <div className="row" style={{ gap: 8 }}>
-          <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
-          <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
+          <Button icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
+          <Button icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
         </div>
       </div>
       {bw ? <>

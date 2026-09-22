@@ -29,6 +29,9 @@ const removeDrinkAt = (iso, i) => update(s => { const w = ensureWater(s); const 
 const setWaterGoal = ml => update(s => { const w = ensureWater(s); w.goalMl = Math.max(0, Math.round(ml) || 0) })
 const setWaterReminder = patch => update(s => { const w = ensureWater(s); w.reminder = { ...w.reminder, ...patch, tz: localTZ() } })
 
+// Quick-log a glass of water to today — used by the Home widget.
+export function quickWater(ml) { logDrink(todayISO(), mkEntry(drinkByKey('glass'), ml)); toast(t('Added {0} ml', ml)) }
+
 const TILE_DRINKS = ['glass', 'bottle_baby', 'bottle_s', 'bottle_l', 'coffee', 'tea', 'soda', 'energy'].map(drinkByKey)
 const tileStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '12px 4px', background: 'var(--surface-2)', border: 'none', borderRadius: 12, cursor: 'pointer', color: 'var(--label)' }
 const iconTile = { width: 40, height: 40, borderRadius: 11, background: 'var(--surface-3)', display: 'grid', placeItems: 'center', color: 'var(--teal)', fontSize: 20 }

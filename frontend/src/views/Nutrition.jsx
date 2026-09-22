@@ -60,7 +60,7 @@ function candidateList(n) {
   if (out.length < 4) for (const f of FOODS) { const c = foodCand(f); if (c.protein >= 15) out.push(c); if (out.length >= 12) break }
   return out
 }
-const slotForNow = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack' }
+export const slotForNow = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack' }
 function logCandidate(c, iso, slot) {
   if (c.kind === 'meal') return logMeal(c.ref, iso, slot)
   if (c.kind === 'recipe') { const rf = recFood(c.ref); return addEntry(iso, { meal: slot, name: rf.name, qty: 1, unit: 'serving', ...recipePerServing(c.ref), source: 'recipe', base: rf }) }
@@ -427,7 +427,7 @@ function openEntry(iso, e) {
   </>, { kind: 'center' })
 }
 export const openTargets = () => ui().openSheet(close => <Targets close={close} />)
-const openLog = (meal, iso) => ui().openSheet(close => <LogSheet meal={meal} iso={iso} close={close} />)
+export const openLog = (meal, iso) => ui().openSheet(close => <LogSheet meal={meal} iso={iso} close={close} />)
 const openPortion = (food, meal, iso, opts = {}) => ui().openSheet(close => <Portion food={food} meal={meal} iso={iso} editId={opts.editId} initQty={opts.initQty} initUnit={opts.initUnit} onAdd={opts.onAdd} close={close} />)
 const openQuickAdd = (meal, iso) => ui().openSheet(close => <QuickAdd meal={meal} iso={iso} close={close} />)
 const openCustomFood = (meal, iso, code) => ui().openSheet(close => <CustomFood meal={meal} iso={iso} code={code} close={close} />)
