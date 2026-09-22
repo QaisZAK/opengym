@@ -35,7 +35,14 @@ const addEntry = (iso, entry) => update(s => { const n = nz(s); (n.log[iso] = n.
 const updateEntry = (iso, id, entry) => update(s => { const n = nz(s); const d = n.log[iso] || []; const i = d.findIndex(e => e.id === id); if (i >= 0) d[i] = { ...d[i], ...entry, id } })
 const delEntry = (iso, id) => update(s => { const n = nz(s); n.log[iso] = (n.log[iso] || []).filter(e => e.id !== id) })
 const upsertFood = food => update(s => { const n = nz(s); const i = n.foods.findIndex(f => f.id === food.id); if (i >= 0) n.foods[i] = food; else n.foods.push(food) })
-const saveTargets = (profile, targets) => update(s => { const n = nz(s); n.profile = profile; n.targets = targets })
+// Sex is one source of truth on s.body (which also drives the body-diagram figure); nutrition.profile
+// keeps only the nutrition-specific bits (age, height, activity, goal).
+const saveTargets = (profile, targets) => update(s => {
+  const n = nz(s)
+  s.body = profile.sex === 'female' ? 'female' : 'male'
+  n.profile = { age: profile.age, heightCm: profile.heightCm, activity: profile.activity, goal: profile.goal }
+  n.targets = targets
+})
 const upsertMeal = m => update(s => { const n = nz(s); const i = n.meals.findIndex(x => x.id === m.id); if (i >= 0) n.meals[i] = m; else n.meals.push(m) })
 const delMeal = id => update(s => { const n = nz(s); n.meals = n.meals.filter(m => m.id !== id) })
 const upsertRecipe = r => update(s => { const n = nz(s); const i = n.recipes.findIndex(x => x.id === r.id); if (i >= 0) n.recipes[i] = r; else n.recipes.push(r) })
@@ -366,7 +373,7 @@ const ACT_OPTS = [
 
 function Targets({ close }) {
   const S = getS(); const n = S.nutrition || {}; const pr = n.profile || {}; const tg = n.targets || {}
-  const [sex, setSex] = useState(pr.sex || (S.body === 'female' ? 'female' : 'male'))
+  const [sex, setSex] = useState(S.body === 'female' ? 'female' : 'male')
   const [age, setAge] = useState(pr.age || null)
   const [ht, setHt] = useState(pr.heightCm || null)
   const [act, setAct] = useState(pr.activity || 'moderate')
