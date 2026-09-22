@@ -22,6 +22,13 @@ import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLIC
 import { MOBILE, shareExport } from './lib/mobile.js'
 import { driveConfigured, ensureFolder, uploadPhoto, photoUrl, resizeImage } from './lib/gdrive.js'
 import { platesPerSide, PLATES, BAR } from './lib/plates.js'
+import { newRecords, prCount } from './lib/records.js'
+
+const PR_KIND = {
+  reps: { icon: 'medal', label: 'Rep PR:', short: 'Reps' },
+  volume: { icon: 'chart', label: 'Volume PR:', short: 'Volume' },
+  hold: { icon: 'timer', label: 'Longest hold:', short: 'Hold' }
+}
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -751,7 +758,7 @@ function WorkoutDetail({ w, close }) {
       const ex = EXIDX[e.id]
       return <div key={i} className="row" style={{ marginBottom: 12, alignItems: 'flex-start' }}>
         {ex && <Thumb ex={ex} />}
-        <div className="grow"><div className="tt capitalize" style={{ fontWeight: 600 }}>{ex ? ex.n : (e.n || e.id)} {w.prs && w.prs.includes(e.id) && <span className="pr"><Icon name="trophy" />PR</span>}{w.prs1rm && w.prs1rm.includes(e.id) && <span className="pr"><Icon name="chartLine" />1RM</span>}</div>
+        <div className="grow"><div className="tt capitalize" style={{ fontWeight: 600 }}>{ex ? ex.n : (e.n || e.id)} {w.prs && w.prs.includes(e.id) && <span className="pr"><Icon name="trophy" />PR</span>}{w.prs1rm && w.prs1rm.includes(e.id) && <span className="pr"><Icon name="chartLine" />1RM</span>}{(w.prsMore || []).filter(p => p.id === e.id).map(p => <span key={p.kind} className="pr"><Icon name={PR_KIND[p.kind].icon} />{t(PR_KIND[p.kind].short)}</span>)}</div>
           <div className="ss">{e.sets.filter(s => s.done).map(s => setLabel(e.id, s, e.target)).join('  ·  ') || t('no sets')}</div></div>
       </div>
     })}
@@ -810,7 +817,7 @@ export function WorkoutRow({ w, onClick }) {
     <span className="lrow-i" style={{ width: 34, height: 34, borderRadius: 8, fontSize: 19 }}><Icon name={glyph} /></span>
     <div className="grow"><div className="tt">{w.name}</div>
       <div className="ss">{[fmtDate(w.d, true), ...durPart(w.end - w.start), t('{0} sets', setsDone(w)), fmtVol(w.vol, st.unit)].join(' · ')}</div></div>
-    {((w.prs?.length || 0) + (w.prs1rm?.length || 0)) > 0 && <span className="pr"><Icon name="trophy" />{(w.prs?.length || 0) + (w.prs1rm?.length || 0)} PR</span>}
+    {prCount(w) > 0 && <span className="pr"><Icon name="trophy" />{prCount(w)} PR</span>}
     <Icon name="chevronRight" className="chev" />
   </div>
 }
@@ -951,7 +958,7 @@ function SessionRating({ w }) {
   </div>
 }
 
-function FinishSummary({ w, prs, e1prs = [], close }) {
+function FinishSummary({ w, prs, e1prs = [], more = [], close }) {
   const st = useStore(s => s.S)
   return <div style={{ textAlign: 'center', padding: '8px 0' }}>
     <div style={{ fontSize: 44, display: 'flex', justifyContent: 'center', color: 'var(--acc)' }}><Icon name="trophy" /></div>
@@ -960,11 +967,12 @@ function FinishSummary({ w, prs, e1prs = [], close }) {
       <div className="tile"><div className="l">{t('Duration')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fmtDur(w.end - w.start)}</div></div>
       <div className="tile"><div className="l">{t('Volume')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fmtVol(w.vol, st.unit)}</div></div>
       <div className="tile"><div className="l">{t('Sets')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{setsDone(w)}</div></div>
-      <div className="tile"><div className="l">{t('PRs')}</div><div className="v" style={{ fontSize: 20 }}>{prs.length || '—'}</div></div>
+      <div className="tile"><div className="l">{t('PRs')}</div><div className="v" style={{ fontSize: 20 }}>{prCount(w) || '—'}</div></div>
     </div>
-    {(prs.length > 0 || e1prs.length > 0) && <div style={{ textAlign: 'left', marginBottom: 12 }}>
+    {prCount(w) > 0 && <div style={{ textAlign: 'left', marginBottom: 12 }}>
       {prs.map(id => <div key={id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="trophy" style={{ fontSize: 13 }} />{t('New PR:')} {(EXIDX[id] || {}).n || id}</div>)}
       {e1prs.map(p => <div key={p.id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="chartLine" style={{ fontSize: 13 }} />{t('Best estimated 1RM:')} {(EXIDX[p.id] || {}).n || p.id} · {fmtNum(p.est)} {st.unit}</div>)}
+      {more.map(p => <div key={p.id + p.kind} className="small accent capitalize row" style={{ gap: 5 }}><Icon name={PR_KIND[p.kind].icon} style={{ fontSize: 13 }} />{t(PR_KIND[p.kind].label)} {(EXIDX[p.id] || {}).n || p.id}</div>)}
     </div>}
     <h4 className="sec" style={{ textAlign: 'left' }}>{t('What you just trained')}</h4>
     <BodyMap load={loadOfWorkouts([w])} body={st.body} />
@@ -988,6 +996,7 @@ function doFinishWorkout() {
   if (!A) return
   const prs = []
   const e1prs = []
+  const more = []
   A.entries.forEach(e => {
     const mx = Math.max(0, ...e.sets.filter(isWork).map(s => s.w))
     if (mx > 0 && mx > bestWeightFor(st, e.id)) prs.push(e.id)
@@ -995,6 +1004,9 @@ function doFinishWorkout() {
     // same weight for more reps. Reported separately so it can't be read as a load PR.
     const rec = is1RMRecord(st, e.id, e)
     if (rec && !prs.includes(e.id)) e1prs.push({ id: e.id, ...rec })
+    // Rep / volume / hold PRs. A heavier top set already says "PR", so a rep PR on the same
+    // exercise would be the same news twice.
+    newRecords(st.workouts, e).forEach(kind => { if (!(kind === 'reps' && prs.includes(e.id))) more.push({ id: e.id, kind }) })
   })
   const w = {
     id: A.id, d: A.d, start: A.start, end: Date.now(), routineId: A.routineId, name: A.name, bw: A.bw,
@@ -1002,7 +1014,7 @@ function doFinishWorkout() {
     // finished workout cannot say whether it hit its reps, and a timed session reads back
     // as "0 reps". It is what the progression engine works from.
     entries: A.entries.map(e => ({ id: e.id, sets: e.sets, topW: e.topW || null, target: e.target || null })).filter(e => e.sets.some(s => s.done)),
-    prs, prs1rm: e1prs.map(p => p.id)
+    prs, prs1rm: e1prs.map(p => p.id), ...(more.length ? { prsMore: more } : {})
   }
   w.vol = workoutVolume(w)
   update(s => {
@@ -1015,5 +1027,5 @@ function doFinishWorkout() {
   })
   useUI.getState().stopRest()
   beep(snd(), 880, 0.15); beep(snd(), 1100, 0.15, 0.18); beep(snd(), 1320, 0.3, 0.36)
-  ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} close={close} />, { kind: 'center', locked: true })
+  ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} more={more} close={close} />, { kind: 'center', locked: true })
 }
