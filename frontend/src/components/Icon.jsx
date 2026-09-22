@@ -113,6 +113,7 @@ const P = {
   shuffle: <><path d="M3.6 7.2h2.9c1.6 0 2.8.9 3.8 2.4l3 4.8c1 1.5 2.2 2.4 3.8 2.4h2.9M3.6 16.8h2.9c1.6 0 2.8-.9 3.8-2.4l.7-1.1M15.6 9.9l.7-1.1c1-1.5 2.2-2.4 3.8-2.4h1.9" /><path d="m17.9 4.3 2.8 2.1-2.8 2.1M17.9 14.7l2.8 2.1-2.8 2.1" /></>,
   info: <><circle cx="12" cy="12" r="8.2" /><path d="M12 11v5.4" /><circle cx="12" cy="7.9" r=".9" fill="currentColor" stroke="none" /></>,
   barcode: <path d="M4 6.5v11M6.6 6.5v11M9.2 6.5v8M9.2 16v1.5M11.8 6.5v11M14.4 6.5v8M14.4 16v1.5M17 6.5v11M20 6.5v11" />,
+  water: <path d="M12 3.6c3.2 3.8 5.4 6.9 5.4 9.8a5.4 5.4 0 0 1-10.8 0c0-2.9 2.2-6 5.4-9.8Z" />,
 }
 
 // A few keys are aliases so call sites can say what they mean.

@@ -53,6 +53,14 @@ export default function Plan() {
         <div className="empty"><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
         <Button icon="sparkles" onClick={loadStarterPlan}>{t('Load starter plan (Push / Pull / Legs)')}</Button>
       </>}
+      <h4 className="sec" style={{ marginTop: 22 }}>{t('Exercises')}</h4>
+      <div className="list">
+        <div className="item" onClick={() => nav('/library')}>
+          <span className="lrow-i"><Icon name="list" /></span>
+          <div className="grow"><div className="tt">{t('Exercise library')}</div><div className="ss">{t('Browse exercises & add to a routine')}</div></div>
+          <Icon name="chevronRight" className="chev" />
+        </div>
+      </div>
     </div></div>
   </>
 }

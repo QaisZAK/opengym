@@ -102,6 +102,12 @@ export default function Settings() {
     </Section>
     {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
 
+    {/* ---------- progress (stats + history live here now) ---------- */}
+    <Section title={t('Progress')}>
+      <Row icon="chart" iconTint="var(--acc)" title={t('Stats')} subtitle={t('Charts, records & activity')} accessory="chevron" onClick={() => nav('/stats')} />
+      <Row icon="history" iconTint="var(--blue)" title={t('History')} subtitle={t('All your workouts')} accessory="chevron" onClick={() => nav('/history')} />
+    </Section>
+
     {/* ---------- general ---------- */}
     <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
       <SelectRow
